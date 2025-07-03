@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Sales Predictor</title>
+  <style>
+    input {
+      margin: 5px;
+    }
+    #result {
+      margin-top: 15px;
+      font-weight: bold;
+      font-size: 18px;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <h2>Sales Prediction</h2>
+
+  <input type="number" placeholder="Price" id="price" />
+  <input type="number" placeholder="Promotion (0 or 1)" id="promo" />
+  <input type="number" placeholder="Day" id="day" />
+  <input type="number" placeholder="Month" id="month" />
+  <input type="number" placeholder="Day of Week (0–6)" id="dow" />
+  <button onclick="predict()">Predict</button>
+
+  <p id="result"></p>
+
+  <script>
+    async function predict() {
+      const data = {
+        price: parseFloat(document.getElementById('price').value),
+        promotion: parseInt(document.getElementById('promo').value),
+        day: parseInt(document.getElementById('day').value),
+        month: parseInt(document.getElementById('month').value),
+        day_of_week: parseInt(document.getElementById('dow').value)
+      };
+
+      try {
+        const res = await fetch('http://127.0.0.1:5000/predict', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        if (!res.ok) {
+          throw new Error('Prediction request failed');
+        }
+
+        const result = await res.json();
+        document.getElementById('result').innerText =
+          "📈 Predicted Sales: " + result.prediction.toFixed(2);
+      } catch (error) {
+        console.error(error);
+        document.getElementById('result').innerText =
+          "❌ Error: Could not get prediction. Make sure backend is running.";
+      }
+    }
+  </script>
+</body>
+</html>
