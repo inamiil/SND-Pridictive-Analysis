@@ -1,5 +1,17 @@
-from Flask_App import app
+from flask import Blueprint, render_template, jsonify
+from DB.db_connect import run_query
 
-@app.route("/")
-def home():
-    return  "Welcome to the fixed Flask Structure"
+routes = Blueprint('routes', __name__)
+
+@routes.route('/')
+def index():
+    return render_template('index.html')
+
+@routes.route('/sales-data')
+def sales_data():
+    try:
+        query = "SELECT TOP 10 * FROM dbo.TBLSKU"
+        data = run_query(query)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
