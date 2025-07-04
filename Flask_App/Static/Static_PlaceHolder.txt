@@ -1,0 +1,1 @@
+This Folder Will be used for Images and CSS Stylesheet 
