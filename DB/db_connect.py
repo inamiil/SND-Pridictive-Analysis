@@ -1,4 +1,6 @@
+# db_connect.py
 import pyodbc
+import pandas as pd
 
 def get_connection():
     conn = pyodbc.connect(
@@ -11,16 +13,12 @@ def get_connection():
     )
     return conn
 
-def run_query(query):
+def get_sales_data():
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(query)
-    
-    columns = [column[0] for column in cursor.description]
-    rows = cursor.fetchall()
-    
-    result = [dict(zip(columns, row)) for row in rows]
-    
-    cursor.close()
+    query = """
+        SELECT TOP 10000 *
+        FROM [Project].[dbo].[FINAL_QUERY]
+    """
+    df = pd.read_sql(query, conn)
     conn.close()
-    return result
+    return df
