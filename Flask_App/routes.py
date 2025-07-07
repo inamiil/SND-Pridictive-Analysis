@@ -10,7 +10,7 @@ def index():
 @routes.route('/sales-data')
 def sales_data():
     try:
-        query = "SELECT TOP 10 * FROM dbo.TBLSKU"
+        query = "SELECT TOP 10 * FROM dbo.vw_CashMemo_With_DateParts"
         data = run_query(query)
         return jsonify(data)
     except Exception as e:
