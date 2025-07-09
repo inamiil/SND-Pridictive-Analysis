@@ -11,7 +11,7 @@ df = get_sales_data()
 # === Set Colors ===
 BISCONNI_COLOR = '#1f77b4'   # Blue
 CANDYLAND_COLOR = '#ff7f0e' # Orange
-COMBINED_COLOR = '#a97146'  # Brownish blend
+COMBINED_COLOR = '#7851A9'  # Brownish blend
 
 # === Quick EDA Summary ===
 print("\U0001F4CC Sample Data:\n", df.head())
