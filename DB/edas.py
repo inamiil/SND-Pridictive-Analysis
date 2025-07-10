@@ -1,64 +1,51 @@
-import pyodbc
+# edas.py
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import calendar
- 
-# --- DB CONNECTION & QUERY (copied from db_connect.py) ---
-from DB.db_connect import run_query
-def get_sales_data(conn):
-    query = """
-        SELECT TOP 10000 *
-        FROM [Project].[dbo].[FINAL_QUERY]
-    """
-    return pd.read_sql(query, conn)
- 
-# --- LOAD DATA ---
- 
-conn = get_connection()
-df = get_sales_data(conn)
-conn.close()
- 
-# ---- EDA ---
+from db_connect import get_sales_data
 
+# --- LOAD DATA ---
+df = get_sales_data()
+
+# ---- EDA ---
 print("📌 Sample Data:")
 print(df.head())
- 
+
 print("\n📦 Shape of data:", df.shape)
- 
+
 print("\n🧱 Null values:")
 print(df.isnull().sum())
- 
+
 print("\n🔠 Data types:")
 print(df.dtypes)
- 
+
 print("\n📊 Summary statistics:")
 print(df.describe())
- 
+
 print("\n🏷️ DIVISIONS by Total Sale Amount:")
 print(df.groupby('DIVISION')["NET_SALE_AMOUNT"].sum().sort_values(ascending=False).head(10))
- 
+
 print("\n🌍 Sales by Region:")
 print(df.groupby('REGION')["NET_SALE_AMOUNT"].sum())
- 
+
 print("\n🗓️ Sales by Month:")
 print(df.groupby('MONTH')["NET_SALE_AMOUNT"].sum().sort_index())
 
-#yearly sales
+# --- BISCONNI Yearly Sales ---
 bisconni_df = df[df['DIVISION'] == 'BISCONNI']
 yearly_sales = bisconni_df.groupby('YEAR')['NET_SALE_AMOUNT'].sum().sort_index()
 print("📈 Yearly Sales for BISCONNI:")
 print(yearly_sales)
 
-#Monthly Sales
+# --- BISCONNI Monthly Sales ---
 monthly_sales = bisconni_df.groupby('MONTH')['NET_SALE_AMOUNT'].sum().sort_index()
 print("\n📊 Monthly Sales for BISCONNI:")
 print(monthly_sales)
 
-
-
 # ---- Visuals ----
-# Monthly Sales
+
+# 📊 Monthly Sales (All Brands)
 df.groupby('MONTH')["NET_SALE_AMOUNT"].sum().sort_index().plot(
     kind='bar',
     title='Monthly Sales',
@@ -69,8 +56,8 @@ df.groupby('MONTH')["NET_SALE_AMOUNT"].sum().sort_index().plot(
 )
 plt.tight_layout()
 plt.show()
- 
-# Region Sales
+
+# 📊 Region Sales
 plt.figure(figsize=(8, 5))
 sns.barplot(data=df, x='REGION', y='NET_SALE_AMOUNT', estimator=sum, ci=None)
 plt.title('Sales by Region')
@@ -78,24 +65,23 @@ plt.xticks(rotation=45)
 plt.tight_layout()
 plt.show()
 
-# division Sales
+# 📊 Division Sales
 plt.figure(figsize=(8, 5))
 sns.barplot(data=df, x='DIVISION', y='NET_SALE_AMOUNT', estimator=sum, ci=None)
-plt.title('Sales by DIVISION')
+plt.title('Sales by Division')
 plt.xticks(rotation=45)
 plt.tight_layout()
 plt.show()
 
-# ✅ Yearly Sales Plot
+# 📈 Yearly Sales Comparison: BISCONNI vs CANDYLAND
 filtered_df = df[df['DIVISION'].str.upper().isin(['BISCONNI', 'CANDYLAND'])]
-
 yearly_sales = (
     filtered_df.groupby(['YEAR', 'DIVISION'])['NET_SALE_AMOUNT']
     .sum()
     .reset_index()
 )
 
-plt.figure(figsize=(10, 5))  
+plt.figure(figsize=(10, 5))
 sns.barplot(data=yearly_sales, x='YEAR', y='NET_SALE_AMOUNT', hue='DIVISION')
 plt.title("📈 Yearly Sales: BISCONNI vs CANDYLAND")
 plt.ylabel("Net Sales")
@@ -104,14 +90,14 @@ plt.legend(title='Division')
 plt.tight_layout()
 plt.show()
 
-#Monthly Sales
+# 📊 Monthly Sales Comparison
 monthly_sales = (
     filtered_df.groupby(['MONTH', 'DIVISION'])['NET_SALE_AMOUNT']
     .sum()
     .reset_index()
 )
 
-plt.figure(figsize=(10, 5)) 
+plt.figure(figsize=(10, 5))
 sns.barplot(data=monthly_sales, x='MONTH', y='NET_SALE_AMOUNT', hue='DIVISION')
 plt.title("📊 Monthly Sales (All Years): BISCONNI vs CANDYLAND")
 plt.ylabel("Net Sales")
@@ -120,11 +106,7 @@ plt.legend(title='Division')
 plt.tight_layout()
 plt.show()
 
-
-
-# 🔍 Filter for BISCONNI and CANDYLAND
-filtered_df = df[df['DIVISION'].str.upper().isin(['BISCONNI', 'CANDYLAND'])]
-#Group sales by YEAR, MONTH, DIVISION
+# 🌡️ Heatmaps for Monthly Sales by Year
 heatmap_data = (
     filtered_df
     .groupby(['DIVISION', 'YEAR', 'MONTH'])['NET_SALE_AMOUNT']
@@ -132,7 +114,6 @@ heatmap_data = (
     .reset_index()
 )
 
-#Create heatmap per division
 for division in heatmap_data['DIVISION'].unique():
     pivot = heatmap_data[heatmap_data['DIVISION'] == division].pivot_table(
         index='YEAR',
@@ -143,7 +124,6 @@ for division in heatmap_data['DIVISION'].unique():
 
     pivot.columns = [calendar.month_abbr[m] for m in pivot.columns]
 
-    # Set a different colormap for each division
     cmap = 'YlGnBu' if division == 'BISCONNI' else 'OrRd'
 
     plt.figure(figsize=(12, 6))
