@@ -5,7 +5,17 @@ import seaborn as sns
 import calendar
 import matplotlib.ticker as ticker
 from matplotlib_venn import venn2
-from db_connect import get_sales_data
+from db_connect import get_connection
+from db_connect import run_query
+
+
+distributor_query = """
+SELECT  DISTRIBUTOR_NAME, NET_SALE_AMOUNT, YEAR, DIVISION
+FROM FINAL_QUERY
+"""
+
+data=run_query(distributor_query)
+df=pd.DataFrame(data)
 
 # === Setup ===
 sns.set_style("whitegrid")
@@ -15,8 +25,6 @@ def format_ticks_as_k(ax):
     )
 
 # === Load Data ===
-df = get_sales_data()
-
 # === Section 1: Top Distributors by Total Sales ===
 top_n = 10
 top_distributors = (
@@ -82,10 +90,23 @@ for distributor in top_5_distributors:
     plt.show()
 '''
 # === Section 4: Division vs Distributor Heatmap ===
-top_10_distributors = df.groupby('DISTRIBUTOR_NAME')['NET_SALE_AMOUNT'].sum().nlargest(10).index.tolist()
+# Filter to distributors working with both divisions
+bisconni_distributors = set(df[df['DIVISION'] == 'BISCONNI']['DISTRIBUTOR_NAME'].unique())
+candyland_distributors = set(df[df['DIVISION'] == 'CANDYLAND']['DISTRIBUTOR_NAME'].unique())
+
+both_distributors = bisconni_distributors & candyland_distributors
+df_both = df[df['DISTRIBUTOR_NAME'].isin(both_distributors)]
+
+# Get top 10 among them
+top_10_distributors = (
+    df_both.groupby('DISTRIBUTOR_NAME')['NET_SALE_AMOUNT']
+    .sum()
+    .nlargest(10)
+    .index.tolist()
+)
 
 heatmap_df = (
-    df[df['DISTRIBUTOR_NAME'].isin(top_10_distributors)]
+    df_both[df_both['DISTRIBUTOR_NAME'].isin(top_10_distributors)]
     .groupby(['DISTRIBUTOR_NAME', 'DIVISION'])['NET_SALE_AMOUNT']
     .sum()
     .reset_index()
@@ -96,17 +117,24 @@ heatmap_df = (
 plt.figure(figsize=(12, 6))
 sns.heatmap(heatmap_df, annot=True, fmt=".0f", cmap="YlGnBu",
             cbar_kws={'format': ticker.FuncFormatter(lambda x, _: f'{x/1_000:.0f}K')})
-plt.title("\U0001F4BC Net Sales: Division vs Distributor (Top 10)")
+plt.title("\U0001F4BC Net Sales: Division vs Distributor (Top 10 Working with Both)")
 plt.xlabel("Division")
 plt.ylabel("Distributor")
 plt.tight_layout()
 plt.show()
 
+
 # === Section 5: Stacked Bar for Top 5 Distributors by Division ===
-top5_names = top_5_distributors
+# Get top 5 from both_distributors based on total sales
+top5_names = (
+    df_both.groupby('DISTRIBUTOR_NAME')['NET_SALE_AMOUNT']
+    .sum()
+    .nlargest(5)
+    .index.tolist()
+)
 
 plot_df = (
-    df[df['DISTRIBUTOR_NAME'].isin(top5_names)]
+    df_both[df_both['DISTRIBUTOR_NAME'].isin(top5_names)]
     .groupby(['DISTRIBUTOR_NAME', 'DIVISION'])['NET_SALE_AMOUNT']
     .sum()
     .unstack()
@@ -114,12 +142,13 @@ plot_df = (
 )
 
 plot_df.plot(kind='bar', stacked=True, figsize=(10, 6), colormap='tab20')
-plt.title('Stacked Sales by Division for Top 5 Distributors')
+plt.title('Stacked Sales by Division (Top 5 Distributors Working with Both)')
 plt.ylabel('Net Sales Amount')
 format_ticks_as_k(plt.gca())
 plt.xticks(rotation=45, ha='right')
 plt.tight_layout()
 plt.show()
+
 
 # === Section 6: Distributor-Division Relationship Sets ===
 bisconni_distributors = set(df[df['DIVISION'] == 'BISCONNI']['DISTRIBUTOR_NAME'].unique())

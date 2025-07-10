@@ -3,7 +3,7 @@ import pyodbc
 import pandas as pd
 
 def get_connection():
-    conn = pyodbc.connect(
+    return pyodbc.connect(
         'DRIVER={ODBC Driver 18 for SQL Server};'
         'SERVER=172.19.0.75\\sndpro;'
         'DATABASE=Project;'
@@ -11,14 +11,13 @@ def get_connection():
         'PWD=P@kistan!@#$;'
         'Encrypt=no;'
     )
-    return conn
 
-def get_sales_data():
-    conn = get_connection()
-    query = """
-        SELECT TOP 10000 *
-        FROM [Project].[dbo].[FINAL_QUERY]
-    """
-    df = pd.read_sql(query, conn)
-    conn.close()
-    return df
+def run_query(query):
+    try:
+        conn = get_connection()
+        df = pd.read_sql(query, conn)  # Much easier & safer than manual cursor
+        conn.close()
+        return df
+    except Exception as e:
+        print("❌ Error running query:", e)
+        return pd.DataFrame()  # Return empty DataFrame on failure
