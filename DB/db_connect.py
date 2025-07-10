@@ -13,12 +13,24 @@ def get_connection():
     )
     return conn
 
-def get_sales_data():
+ 
+def run_query(query):
     conn = get_connection()
-    query = """
-        SELECT TOP 10000 *
-        FROM [Project].[dbo].[FINAL_QUERY]
-    """
-    df = pd.read_sql(query, conn)
+    cursor = conn.cursor()
+    cursor.execute(query)
+   
+    # Get column names
+    columns = [column[0] for column in cursor.description]
+   
+    # Fetch data
+    print("Query executed, fetching data...")
+    rows = cursor.fetchall()
+   
+    # Format as list of dictionaries
+    result = [dict(zip(columns, row)) for row in rows]
+   
+    # Close connections
+    cursor.close()
     conn.close()
-    return df
+    return result
+ 
