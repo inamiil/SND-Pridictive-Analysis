@@ -3,7 +3,7 @@ import pyodbc
 import pandas as pd
 
 def get_connection():
-    return pyodbc.connect(
+    conn = pyodbc.connect(
         'DRIVER={ODBC Driver 18 for SQL Server};'
         'SERVER=172.19.0.75\\sndpro;'
         'DATABASE=Project;'
@@ -11,13 +11,26 @@ def get_connection():
         'PWD=P@kistan!@#$;'
         'Encrypt=no;'
     )
+    return conn
 
+ 
 def run_query(query):
-    try:
-        conn = get_connection()
-        df = pd.read_sql(query, conn)  # Much easier & safer than manual cursor
-        conn.close()
-        return df
-    except Exception as e:
-        print("❌ Error running query:", e)
-        return pd.DataFrame()  # Return empty DataFrame on failure
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(query)
+   
+    # Get column names
+    columns = [column[0] for column in cursor.description]
+   
+    # Fetch data
+    print("Query executed, fetching data...")
+    rows = cursor.fetchall()
+   
+    # Format as list of dictionaries
+    result = [dict(zip(columns, row)) for row in rows]
+   
+    # Close connections
+    cursor.close()
+    conn.close()
+    return result
+ 
