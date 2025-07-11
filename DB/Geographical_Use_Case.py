@@ -12,7 +12,7 @@ conn = get_connection()
 
 #Querie for Geographical View
 geo_query = """
-SELECT 
+SELECT 1000000
     DATE_ID,
     DAY,
     MONTH,
@@ -445,7 +445,109 @@ def plot_top5_daily_trend_by_month(df, category_col, title_prefix='Top 5 Daily T
             plt.tight_layout()
             plt.show()
 
-plot_top5_daily_trend_by_month(df, category_col='TERRITORY')
+def plot_daily_sales_by_sku(df, sku_name, year, month):
+    """
+    Plots daily sales trend for a specific SKU in a given month and year.
+
+    Parameters:
+    - df: DataFrame with columns 'SKU_LDESC', 'DATE', 'YEAR', 'MONTH', 'NET_SALE_AMOUNT'
+    - sku_name: str, exact name of the SKU to filter
+    - year: int, e.g., 2024
+    - month: int, e.g., 6 (for June)
+    """
+
+    # Ensure DATE is a datetime object
+    df['DATE'] = pd.to_datetime(df['DATE'], errors='coerce')
+
+    # Filter based on inputs
+    sku_df = df[
+        (df['SKU_LDESC'] == sku_name) &
+        (df['YEAR'] == year) &
+        (df['MONTH'] == month)
+    ].copy()
+
+    # Handle empty result
+    if sku_df.empty:
+        print(f"No sales data found for {sku_name} in {calendar.month_name[month]} {year}")
+        return
+
+    # Group by date
+    daily_grouped = sku_df.groupby('DATE')['NET_SALE_AMOUNT'].sum().reset_index()
+    daily_grouped['NET_SALE_AMOUNT'] = daily_grouped['NET_SALE_AMOUNT'] / 1e6  # Convert to millions
+
+    # Plot
+    plt.figure(figsize=(12, 5))
+    plt.plot(daily_grouped['DATE'], daily_grouped['NET_SALE_AMOUNT'], marker='o', color='#4c72b0')
+    plt.title(f'Daily Sales for "{sku_name}" – {calendar.month_name[month]} {year}')
+    plt.xlabel('Date')
+    plt.ylabel('Net Sale Amount (Millions)')
+    plt.xticks(rotation=45)
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.tight_layout()
+    plt.show()
+
+def plot_top5_distributor_daily_sales(df, territory, year, month):
+    """
+    Plots daily sales trend for the top 5 DISTRIBUTER_CODEs in a given territory, month, and year.
+
+    Parameters:
+    - df: DataFrame with columns 'TERRITORY', 'DISTRIBUTER_CODE', 'DATE', 'YEAR', 'MONTH', 'NET_SALE_AMOUNT'
+    - territory: str (e.g., 'KARACHI')
+    - year: int (e.g., 2024)
+    - month: int (1 to 12)
+    """
+
+    # Ensure DATE column is in datetime format
+    df['DATE'] = pd.to_datetime(df['DATE'], errors='coerce')
+
+    # Filter for given territory, year, and month
+    filtered_df = df[
+        (df['TERRITORY'].str.upper() == territory.upper()) &
+        (df['YEAR'] == year) &
+        (df['MONTH'] == month)
+    ].copy()
+
+    if filtered_df.empty:
+        print(f"No data for {territory} in {calendar.month_name[month]} {year}")
+        return
+
+    # Get top 5 distributors by total NET_SALE_AMOUNT
+    top5_distributors = (
+        filtered_df.groupby('DISTRIBUTER_CODE')['NET_SALE_AMOUNT']
+        .sum()
+        .nlargest(5)
+        .index
+    )
+
+    df_top5 = filtered_df[filtered_df['DISTRIBUTER_CODE'].isin(top5_distributors)]
+
+    # Plot
+    plt.figure(figsize=(12, 6))
+
+    for code in top5_distributors:
+        dist_df = df_top5[df_top5['DISTRIBUTER_CODE'] == code]
+        grouped = (
+            dist_df.groupby('DATE')['NET_SALE_AMOUNT']
+            .sum()
+            .reset_index()
+            .sort_values('DATE')
+        )
+        grouped['NET_SALE_AMOUNT'] = grouped['NET_SALE_AMOUNT'] / 1e6  # Convert to Millions
+        plt.plot(grouped['DATE'], grouped['NET_SALE_AMOUNT'], marker='o', label=f'Distributor {code}')
+
+    plt.title(f'Daily Sales – Top 5 Distributors in {territory.title()} ({calendar.month_name[month]} {year})')
+    plt.xlabel('Date')
+    plt.ylabel('Net Sale Amount (Millions)')
+    plt.xticks(rotation=45)
+    plt.legend(title='DISTRIBUTER_CODE')
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.tight_layout()
+    plt.show()
+
+
+plot_top5_distributor_daily_sales(df, territory='Karachi', year=2024, month=6)
+
+#plot_top5_daily_trend_by_month(df, category_col='TERRITORY')
 
 
 """
