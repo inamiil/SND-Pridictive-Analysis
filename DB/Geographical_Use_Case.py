@@ -12,7 +12,7 @@ conn = get_connection()
 
 #Querie for Geographical View
 geo_query = """
-SELECT TOP 100000000
+SELECT TOP 1000000
     DATE_ID,
     DAY,
     MONTH,
