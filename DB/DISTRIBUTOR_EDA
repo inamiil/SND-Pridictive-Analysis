@@ -1,194 +1,126 @@
-# === Imports ===
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import calendar
 import matplotlib.ticker as ticker
-from matplotlib_venn import venn2
-from db_connect import get_connection
 from db_connect import run_query
 
-
-distributor_query = """
-SELECT  DISTRIBUTOR_NAME, NET_SALE_AMOUNT, YEAR, DIVISION
-FROM FINAL_QUERY
+# === Query 1: National Top 3 Brands ===
+national_query = """
+WITH LimitedData AS (
+    SELECT TOP 10000 *
+    FROM FINAL_QUERY
+    ORDER BY NET_SALE_AMOUNT DESC
+),
+BrandSales AS (
+    SELECT 
+        BRAND,
+        YEAR,
+        MONTH,
+        SUM(NET_SALE_AMOUNT) AS MONTHLY_SALES
+    FROM LimitedData
+    GROUP BY BRAND, YEAR, MONTH
+),
+TopBrands AS (
+    SELECT TOP 3 BRAND
+    FROM LimitedData
+    GROUP BY BRAND
+    ORDER BY SUM(NET_SALE_AMOUNT) DESC
+)
+SELECT 
+    BS.BRAND,
+    BS.YEAR,
+    BS.MONTH,
+    BS.MONTHLY_SALES
+FROM BrandSales BS
+JOIN TopBrands TB ON BS.BRAND = TB.BRAND
+ORDER BY BS.BRAND, BS.YEAR, BS.MONTH;
 """
 
-data=run_query(distributor_query)
-df=pd.DataFrame(data)
+# === Query 2: Top 3 Brands Per Region ===
+regional_query = """
+WITH RankedBrands AS (
+    SELECT 
+        REGION,
+        BRAND,
+        YEAR,
+        MONTH,
+        SUM(NET_SALE_AMOUNT) AS MONTHLY_SALES,
+        ROW_NUMBER() OVER (PARTITION BY REGION, BRAND ORDER BY SUM(NET_SALE_AMOUNT) DESC) AS RN
+    FROM FINAL_QUERY
+    WHERE BRAND IS NOT NULL
+    GROUP BY REGION, BRAND, YEAR, MONTH
+),
+TopBrands AS (
+    SELECT REGION, BRAND
+    FROM (
+        SELECT 
+            REGION, 
+            BRAND,
+            SUM(MONTHLY_SALES) AS TOTAL_SALES,
+            ROW_NUMBER() OVER (PARTITION BY REGION ORDER BY SUM(MONTHLY_SALES) DESC) AS RN
+        FROM RankedBrands
+        GROUP BY REGION, BRAND
+    ) AS Sub
+    WHERE RN <= 3
+),
+MonthlyTrend AS (
+    SELECT 
+        F.REGION,
+        F.BRAND,
+        F.YEAR,
+        F.MONTH,
+        SUM(F.NET_SALE_AMOUNT) AS MONTHLY_SALES
+    FROM FINAL_QUERY F
+    INNER JOIN TopBrands T
+        ON F.REGION = T.REGION AND F.BRAND = T.BRAND
+    GROUP BY F.REGION, F.BRAND, F.YEAR, F.MONTH
+)
+SELECT * 
+FROM MonthlyTrend
+ORDER BY REGION, BRAND, YEAR, MONTH;
+"""
 
-# === Setup ===
-sns.set_style("whitegrid")
+# === Run Queries ===
+national_df = pd.DataFrame(run_query(national_query))
+regional_df = pd.DataFrame(run_query(regional_query))
+
+# === Format Axis as K/M ===
 def format_ticks_as_k(ax):
     ax.yaxis.set_major_formatter(
         ticker.FuncFormatter(lambda x, _: f'{x/1_000_000:.1f}M' if x >= 1_000_000 else f'{x/1_000:.0f}K')
     )
 
-# === Load Data ===
-# === Section 1: Top Distributors by Total Sales ===
-top_n = 10
-top_distributors = (
-    df.groupby('DISTRIBUTOR_NAME')['NET_SALE_AMOUNT']
-    .sum()
-    .nlargest(top_n)
-    .reset_index()
-)
-
-plt.figure(figsize=(14, 6))
-sns.barplot(data=top_distributors, x='DISTRIBUTOR_NAME', y='NET_SALE_AMOUNT', color='#7851A9')
-plt.xticks(rotation=45, ha='right')
-plt.title(f'Top {top_n} Distributors by Total Net Sales (All Years)')
-format_ticks_as_k(plt.gca())
-plt.tight_layout()
-plt.show()
-
-# === Section 2: Yearly Sales for Top Distributors ===
-top_names = top_distributors['DISTRIBUTOR_NAME'].tolist()
-filtered_df = df[df['DISTRIBUTOR_NAME'].isin(top_names)]
-
-yearly_sales = (
-    filtered_df.groupby(['YEAR', 'DISTRIBUTOR_NAME'])['NET_SALE_AMOUNT']
-    .sum()
-    .reset_index()
-)
-
-plt.figure(figsize=(14, 6))
-sns.barplot(data=yearly_sales, x='DISTRIBUTOR_NAME', y='NET_SALE_AMOUNT', hue='YEAR')
-plt.xticks(rotation=45, ha='right')
-plt.title(f'Year-wise Sales of Top {top_n} Distributors')
-format_ticks_as_k(plt.gca())
-plt.tight_layout()
-plt.show()
-top_5_distributors = top_distributors.head(5)['DISTRIBUTOR_NAME'].tolist()
-
-'''
-# === Section 3: Monthly Heatmaps for Top 5 Distributors ===
-
-for distributor in top_5_distributors:
-    pivot = (
-        df[df['DISTRIBUTOR_NAME'] == distributor]
-        .groupby(['YEAR', 'MONTH'])['NET_SALE_AMOUNT']
-        .sum()
-        .reset_index()
-        .pivot(index='YEAR', columns='MONTH', values='NET_SALE_AMOUNT')
-        .fillna(0)
-    )
-    pivot.columns = [calendar.month_abbr[m] for m in pivot.columns]
-
-    plt.figure(figsize=(12, 5))
-    sns.heatmap(
-        pivot, annot=True, fmt="", cmap="Purples",
-        annot_kws={"size": 9},
-        cbar_kws={
-            'format': ticker.FuncFormatter(lambda x, _: f'{x/1_000_000:.1f}M' if x >= 1_000_000 else f'{x/1_000:.0f}K')
-        }
-    )
-    plt.title(f"\U0001F321 Monthly Sales Heatmap - {distributor}")
-    plt.xlabel("Month")
-    plt.ylabel("Year")
-    plt.tight_layout()
-    plt.show()
-'''
-# === Section 4: Division vs Distributor Heatmap ===
-# Filter to distributors working with both divisions
-bisconni_distributors = set(df[df['DIVISION'] == 'BISCONNI']['DISTRIBUTOR_NAME'].unique())
-candyland_distributors = set(df[df['DIVISION'] == 'CANDYLAND']['DISTRIBUTOR_NAME'].unique())
-
-both_distributors = bisconni_distributors & candyland_distributors
-df_both = df[df['DISTRIBUTOR_NAME'].isin(both_distributors)]
-
-# Get top 10 among them
-top_10_distributors = (
-    df_both.groupby('DISTRIBUTOR_NAME')['NET_SALE_AMOUNT']
-    .sum()
-    .nlargest(10)
-    .index.tolist()
-)
-
-heatmap_df = (
-    df_both[df_both['DISTRIBUTOR_NAME'].isin(top_10_distributors)]
-    .groupby(['DISTRIBUTOR_NAME', 'DIVISION'])['NET_SALE_AMOUNT']
-    .sum()
-    .reset_index()
-    .pivot(index='DISTRIBUTOR_NAME', columns='DIVISION', values='NET_SALE_AMOUNT')
-    .fillna(0)
-)
-
+# === Prepare and Plot National Top 3 Brands ===
+national_df['YEAR_MONTH'] = national_df['YEAR'].astype(str) + '-' + national_df['MONTH'].astype(str).str.zfill(2)
 plt.figure(figsize=(12, 6))
-sns.heatmap(heatmap_df, annot=True, fmt=".0f", cmap="YlGnBu",
-            cbar_kws={'format': ticker.FuncFormatter(lambda x, _: f'{x/1_000:.0f}K')})
-plt.title("\U0001F4BC Net Sales: Division vs Distributor (Top 10 Working with Both)")
-plt.xlabel("Division")
-plt.ylabel("Distributor")
+sns.lineplot(data=national_df, x='YEAR_MONTH', y='MONTHLY_SALES', hue='BRAND', marker='o', palette='tab10')
+plt.title("📈 Monthly Sales Trend for Top 3 Brands (National View)")
+plt.xlabel("Month")
+plt.ylabel("Net Sales")
+plt.xticks(rotation=45)
+format_ticks_as_k(plt.gca())
+plt.legend(title='Brand')
 plt.tight_layout()
 plt.show()
 
-
-# === Section 5: Stacked Bar for Top 5 Distributors by Division ===
-# Get top 5 from both_distributors based on total sales
-top5_names = (
-    df_both.groupby('DISTRIBUTOR_NAME')['NET_SALE_AMOUNT']
-    .sum()
-    .nlargest(5)
-    .index.tolist()
+# === Prepare and Plot Regional Top 3 Brands ===
+regional_df['YEAR_MONTH'] = regional_df['YEAR'].astype(str) + '-' + regional_df['MONTH'].astype(str).str.zfill(2)
+sns.set_style("whitegrid")
+g = sns.FacetGrid(regional_df, col='REGION', col_wrap=3, height=4, sharey=False)
+g.map_dataframe(
+    sns.barplot,
+    x='YEAR_MONTH',
+    y='MONTHLY_SALES',
+    hue='BRAND',
+    palette='Set2'
 )
-
-plot_df = (
-    df_both[df_both['DISTRIBUTOR_NAME'].isin(top5_names)]
-    .groupby(['DISTRIBUTOR_NAME', 'DIVISION'])['NET_SALE_AMOUNT']
-    .sum()
-    .unstack()
-    .fillna(0)
-)
-
-plot_df.plot(kind='bar', stacked=True, figsize=(10, 6), colormap='tab20')
-plt.title('Stacked Sales by Division (Top 5 Distributors Working with Both)')
-plt.ylabel('Net Sales Amount')
-format_ticks_as_k(plt.gca())
-plt.xticks(rotation=45, ha='right')
-plt.tight_layout()
-plt.show()
-
-
-# === Section 6: Distributor-Division Relationship Sets ===
-bisconni_distributors = set(df[df['DIVISION'] == 'BISCONNI']['DISTRIBUTOR_NAME'].unique())
-candyland_distributors = set(df[df['DIVISION'] == 'CANDYLAND']['DISTRIBUTOR_NAME'].unique())
-
-both_distributors = bisconni_distributors & candyland_distributors
-only_bisconni = bisconni_distributors - candyland_distributors
-only_candyland = candyland_distributors - bisconni_distributors
-
-print(f"\n✅ Distributors working with both: {len(both_distributors)}")
-print(f"\n🔵 Distributors working only with BISCONNI: {len(only_bisconni)}")
-print(f"\n🟠 Distributors working only with CANDYLAND: {len(only_candyland)}")
-
-# === Section 7: Venn Diagram ===
-plt.figure(figsize=(6, 6))
-venn2(
-    subsets=(len(only_bisconni), len(only_candyland), len(both_distributors)),
-    set_labels=('BISCONNI', 'CANDYLAND'),
-    set_colors=('skyblue', 'orange'),
-    alpha=0.7
-)
-plt.title("\U0001F9ED Distributor Overlap: BISCONNI vs CANDYLAND")
-plt.show()
-
-# === Section 8: Sales by Distributor Type ===
-def classify_distributor(name):
-    if name in both_distributors:
-        return 'Both'
-    elif name in bisconni_distributors:
-        return 'Only BISCONNI'
-    else:
-        return 'Only CANDYLAND'
-
-df['DISTRIBUTOR_TYPE'] = df['DISTRIBUTOR_NAME'].apply(classify_distributor)
-
-type_sales = df.groupby('DISTRIBUTOR_TYPE')['NET_SALE_AMOUNT'].sum().reset_index()
-
-plt.figure(figsize=(7, 5))
-sns.barplot(data=type_sales, x='DISTRIBUTOR_TYPE', y='NET_SALE_AMOUNT', palette=['#1f77b4', '#ff7f0e', '#7851A9'])
-plt.title('\U0001F4B0 Total Net Sales by Distributor Type')
-format_ticks_as_k(plt.gca())
+g.set_axis_labels("Month", "Net Sales")
+g.set_titles("{col_name}")
+for ax in g.axes.flat:
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
+    format_ticks_as_k(ax)
+g.add_legend(title="Top Brands")
+plt.subplots_adjust(top=0.9)
+g.fig.suptitle("📈 Monthly Sales Trend of Top 3 Brands per Region", fontsize=16)
 plt.tight_layout()
 plt.show()
