@@ -1,9 +1,8 @@
-# db_connect.py
 import pyodbc
 import pandas as pd
 
 def get_connection():
-    conn = pyodbc.connect(
+    return pyodbc.connect(
         'DRIVER={ODBC Driver 18 for SQL Server};'
         'SERVER=172.19.0.75\\sndpro;'
         'DATABASE=Project;'
@@ -11,26 +10,16 @@ def get_connection():
         'PWD=P@kistan!@#$;'
         'Encrypt=no;'
     )
-    return conn
 
- 
-def run_query(query):
+def get_sales_data():
+    query = """
+        SELECT TOP 10000 *
+        FROM [Project].[dbo].[FINAL_QUERY]
+    """
+    return run_query(query, as_dataframe=True)
+
+def run_query(query, as_dataframe=False):
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(query)
-   
-    # Get column names
-    columns = [column[0] for column in cursor.description]
-   
-    # Fetch data
-    print("Query executed, fetching data...")
-    rows = cursor.fetchall()
-   
-    # Format as list of dictionaries
-    result = [dict(zip(columns, row)) for row in rows]
-   
-    # Close connections
-    cursor.close()
+    df = pd.read_sql(query, conn)
     conn.close()
-    return result
- 
+    return df if as_dataframe else df.to_dict(orient='records')
