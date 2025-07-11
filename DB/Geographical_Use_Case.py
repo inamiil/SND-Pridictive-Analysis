@@ -12,7 +12,7 @@ conn = get_connection()
 
 #Querie for Geographical View
 geo_query = """
-SELECT TOP 1000000
+SELECT 
     DATE_ID,
     DAY,
     MONTH,
@@ -376,6 +376,79 @@ def plot_top5_monthly_trend(df, category_col, title_prefix='Top 5 Monthly Trend'
         plt.tight_layout()
         plt.show()
 
+def plot_top5_daily_trend_by_month(df, category_col, title_prefix='Top 5 Daily Trend'):
+    """
+    Plots daily line graphs for top 5 categories (by total sales), one per month per year.
+
+    Parameters:
+    - df: DataFrame with 'DAY', 'MONTH', 'YEAR', and 'NET_SALE_AMOUNT'
+    - category_col: e.g., 'AREA', 'REGION', 'DIVISION'
+    - title_prefix: Base title for the graph
+    """
+
+    # Ensure correct types
+    df[category_col] = df[category_col].astype(str)
+    df['NET_SALE_AMOUNT'] = pd.to_numeric(df['NET_SALE_AMOUNT'], errors='coerce')
+
+    # Get top 5 by overall NET_SALE_AMOUNT
+    top5 = (
+        df.groupby(category_col)['NET_SALE_AMOUNT']
+        .sum()
+        .dropna()
+        .nlargest(5)
+        .index
+    )
+
+    # Filter for top 5 only
+    df_top5 = df[df[category_col].isin(top5)].copy()
+
+    # Loop through years and months
+    years = sorted(df_top5['YEAR'].unique())
+    for year in years:
+        year_df = df_top5[df_top5['YEAR'] == year]
+        months = sorted(year_df['MONTH'].unique())
+
+        for month in months:
+            month_df = year_df[year_df['MONTH'] == month]
+
+            plt.figure(figsize=(12, 6))
+            for cat in top5:
+                cat_df = month_df[month_df[category_col] == cat]
+
+                grouped = (
+                    cat_df.groupby('DAY')['NET_SALE_AMOUNT']
+                    .sum()
+                    .sort_index()
+                    .fillna(0)
+                    .reset_index()
+                )
+                grouped['NET_SALE_AMOUNT'] = grouped['NET_SALE_AMOUNT'].astype(float) / 1e6
+
+                plt.plot(
+                    grouped['DAY'],
+                    grouped['NET_SALE_AMOUNT'],
+                    marker='o',
+                    label=cat
+                )
+
+            # Calculate the average sales value
+
+            # Get month name
+            month_name = calendar.month_name[month]
+
+            plt.title(f'{title_prefix} – {month_name} {year}')
+            plt.xlabel('Day of Month')
+            plt.ylabel('Net Sale Amount (Millions)')
+            plt.xticks(grouped['DAY'])  # Ensure ticks align with days
+            plt.grid(True, linestyle='--', alpha=0.5)
+            plt.legend(title=category_col)
+            plt.tight_layout()
+            plt.show()
+
+plot_top5_daily_trend_by_month(df, category_col='TERRITORY')
+
+
+"""
 #---DIVISION---#
 
 
@@ -549,3 +622,5 @@ plot_top5_monthly_trend(df, category_col='TOWN')
 #TOWN - LINE GRAPH (MONTHLY SALES)
 #plot_monthly_line_by_entity_year(df, 'TOWN', title_prefix="Monthly Net Sales Trend", color='#4c72b0')
 
+
+"""
