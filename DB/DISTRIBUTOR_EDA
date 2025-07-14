@@ -7,7 +7,7 @@ from db_connect import run_query
 # === Query 1: National Top 3 Brands ===
 national_query = """
 WITH LimitedData AS (
-    SELECT TOP 10000 *
+    SELECT  *
     FROM FINAL_QUERY
     ORDER BY NET_SALE_AMOUNT DESC
 ),
