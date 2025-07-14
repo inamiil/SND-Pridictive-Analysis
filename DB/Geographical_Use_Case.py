@@ -12,7 +12,7 @@ conn = get_connection()
 
 #Querie for Geographical View
 geo_query = """
-SELECT 1000000
+SELECT 10000
     DATE_ID,
     DAY,
     MONTH,
@@ -544,11 +544,82 @@ def plot_top5_distributor_daily_sales(df, territory, year, month):
     plt.tight_layout()
     plt.show()
 
+def plot_daily_sales_by_month_for_territory(df, territory, title_prefix='Daily Sales by Month'):
+    """
+    Plots daily sales line graphs per month for a specific territory,
+    and prints top 3 and bottom 3 days by sales for each month.
 
-plot_top5_distributor_daily_sales(df, territory='Karachi', year=2024, month=6)
+    Parameters:
+    - df: DataFrame with 'DAY', 'MONTH', 'YEAR', 'TERRITORY', and 'NET_SALE_AMOUNT'
+    - territory: str, the name of the territory to filter
+    - title_prefix: optional title prefix for the chart
+    """
+    # Preprocessing
+    df['TERRITORY'] = df['TERRITORY'].astype(str).str.upper()
+    df['NET_SALE_AMOUNT'] = pd.to_numeric(df['NET_SALE_AMOUNT'], errors='coerce')
+    df = df[df['TERRITORY'] == territory.upper()]
+
+    if df.empty:
+        print(f"No data found for territory: {territory}")
+        return
+
+    # Loop through years and months
+    years = sorted(df['YEAR'].unique())
+    for year in years:
+        year_df = df[df['YEAR'] == year]
+        months = sorted(year_df['MONTH'].unique())
+
+        for month in months:
+            month_df = year_df[year_df['MONTH'] == month].copy()
+
+            if month_df.empty:
+                continue
+
+            # Group by day
+            grouped = (
+                month_df.groupby('DAY')['NET_SALE_AMOUNT']
+                .sum()
+                .sort_index()
+                .reset_index()
+            )
+            grouped['NET_SALE_AMOUNT_M'] = grouped['NET_SALE_AMOUNT'] / 1e6  # convert to millions
+
+            # Plot
+            plt.figure(figsize=(12, 6))
+            plt.plot(
+                grouped['DAY'],
+                grouped['NET_SALE_AMOUNT_M'],
+                marker='o',
+                label=territory.upper()
+            )
+
+            # Titles
+            month_name = calendar.month_name[month]
+            plt.title(f'{title_prefix} – {month_name} {year}')
+            plt.xlabel('Day of Month')
+            plt.ylabel('Net Sale Amount (Millions)')
+            plt.xticks(grouped['DAY'])
+            plt.grid(True, linestyle='--', alpha=0.5)
+            plt.legend()
+            plt.tight_layout()
+            plt.show()
+
+            # Show top 3 and bottom 3 days
+            print(f'\n📍 {territory.title()} – {month_name} {year}')
+            print('🔼 Top 3 Sales Days:')
+            print(grouped.nlargest(3, 'NET_SALE_AMOUNT')[['DAY', 'NET_SALE_AMOUNT']].to_string(index=False,
+                                                                                                 formatters={'NET_SALE_AMOUNT': '{:,.0f}'.format}))
+
+            print('🔽 Bottom 3 Sales Days:')
+            print(grouped.nsmallest(3, 'NET_SALE_AMOUNT')[['DAY', 'NET_SALE_AMOUNT']].to_string(index=False,
+                                                                                                 formatters={'NET_SALE_AMOUNT': '{:,.0f}'.format}))
+
+
+#plot_top5_distributor_daily_sales(df, territory='Karachi', year=2024, month=6)
 
 #plot_top5_daily_trend_by_month(df, category_col='TERRITORY')
 
+plot_daily_sales_by_month_for_territory(df, 'Karachi')
 
 """
 #---DIVISION---#
