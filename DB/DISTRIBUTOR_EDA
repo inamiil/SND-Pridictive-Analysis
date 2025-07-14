@@ -6,23 +6,19 @@ from db_connect import run_query
 
 # === Query 1: National Top 3 Brands ===
 national_query = """
-WITH LimitedData AS (
-    SELECT  *
-    FROM FINAL_QUERY
-    ORDER BY NET_SALE_AMOUNT DESC
-),
-BrandSales AS (
+-- === Query 1: National Top 3 Brands ===
+WITH BrandSales AS (
     SELECT 
         BRAND,
         YEAR,
         MONTH,
         SUM(NET_SALE_AMOUNT) AS MONTHLY_SALES
-    FROM LimitedData
+    FROM FINAL_QUERY
     GROUP BY BRAND, YEAR, MONTH
 ),
 TopBrands AS (
     SELECT TOP 3 BRAND
-    FROM LimitedData
+    FROM FINAL_QUERY
     GROUP BY BRAND
     ORDER BY SUM(NET_SALE_AMOUNT) DESC
 )
@@ -34,18 +30,19 @@ SELECT
 FROM BrandSales BS
 JOIN TopBrands TB ON BS.BRAND = TB.BRAND
 ORDER BY BS.BRAND, BS.YEAR, BS.MONTH;
+
 """
 
 # === Query 2: Top 3 Brands Per Region ===
 regional_query = """
+-- === Query 2: Regional Top 3 Brands ===
 WITH RankedBrands AS (
     SELECT 
         REGION,
         BRAND,
         YEAR,
         MONTH,
-        SUM(NET_SALE_AMOUNT) AS MONTHLY_SALES,
-        ROW_NUMBER() OVER (PARTITION BY REGION, BRAND ORDER BY SUM(NET_SALE_AMOUNT) DESC) AS RN
+        SUM(NET_SALE_AMOUNT) AS MONTHLY_SALES
     FROM FINAL_QUERY
     WHERE BRAND IS NOT NULL
     GROUP BY REGION, BRAND, YEAR, MONTH
@@ -78,6 +75,7 @@ MonthlyTrend AS (
 SELECT * 
 FROM MonthlyTrend
 ORDER BY REGION, BRAND, YEAR, MONTH;
+
 """
 
 # === Run Queries ===
