@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, jsonify, request
 from DB.db_connect import run_query, get_geo_data
 
 # DIVISION
-from DB.DIVISION_EDA import (
+from DB.FRONTEND_DIVISION_EDA import (
     get_region_sales, get_division_sales, get_yearly_sales_by_division,
     get_monthly_sales_combined, get_monthly_sales_by_division, get_heatmap_data
 )
