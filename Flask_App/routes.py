@@ -1,5 +1,5 @@
-from flask import Blueprint, render_template, jsonify
-from DB.db_connect import run_query
+from flask import Blueprint, render_template, jsonify, request
+from DB.db_connect import run_query, get_geo_data
 
 # DIVISION
 from DB.DIVISION_EDA import (
@@ -19,6 +19,9 @@ from DB.eda_sku import (
     get_top_skus, get_pack_size_sales_by_division, get_top_brands_by_division,
     get_top_brand_packsize_combos, get_top_flavours_by_division
 )
+
+#Geographic (For now)
+from DB.EDA_Geographical import (get_daily_sales_by_month_for_territory)
 
 routes = Blueprint('routes', __name__)
 
@@ -102,3 +105,19 @@ def api_national_top_brands():
 @routes.route('/api/regional-top-brands')
 def api_regional_top_brands():
     return jsonify(get_regional_top_brands())
+
+
+#---Anomaly Detection (Daily Sales Per Territory Monthly)---#
+# Flask route example
+@routes.route('/api/daily-sales', methods=['GET'])
+def get_daily_sales_api():
+    territory = request.args.get('territory')
+    division = request.args.get('division')  
+    year = request.args.get('year', type=int)
+    month = request.args.get('month', type=int)
+
+    df = get_geo_data()
+    result = get_daily_sales_by_month_for_territory(df, territory, division)
+
+    key = f"{year}-{str(month).zfill(2)}"
+    return jsonify(result.get(key, {}))  # Only return the selected month/year

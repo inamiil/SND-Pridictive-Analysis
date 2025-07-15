@@ -91,6 +91,19 @@ def get_regional_brands_data():
     """
     return run_query(query, as_dataframe=False)
 
+def get_geo_data():
+    query = """
+    SELECT 10
+    DATE_ID,
+    DAY,
+    MONTH,
+    YEAR,
+    DIVISION,
+    TERRITORY,
+    NET_SALE_AMOUNT
+    FROM FINAL_QUERY
+    """
+    return run_query(query, as_dataframe=False)
 
 def run_query(query, as_dataframe=False):
     conn = get_connection()
