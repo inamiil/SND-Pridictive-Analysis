@@ -254,6 +254,7 @@
     }
 
     async function loadRegionalBrandCharts() {
+        console.log("📡 Calling /api/daily-sales");  // <== Add this at top
         const res = await fetch('/api/regional-top-brands');
         let data = await res.json();
 
@@ -326,7 +327,7 @@
             const values = data.data.map(d => d.NET_SALE_AMOUNT_M);
 
             const ctx = document.getElementById('DailySalesChart').getContext('2d');
-            if (window.DailySalesChart) window.dailySalesChart.destroy();
+            if (window.DailySalesChart && typeof window.DailySalesChart.destroy === 'function') {window.DailySalesChart.destroy();}
 
             window.DailySalesChart = new Chart(ctx, {
                 type: 'line',
@@ -360,23 +361,12 @@
             document.getElementById('bottomSalesDays').innerHTML =
                 data.bottom_3.map(d => `Day ${d.DAY}: ${d.NET_SALE_AMOUNT.toLocaleString()}`).join('<br>');
         } catch (err) {
-            console.error('Error loading sales data:', err);
-            alert('Failed to load sales data.');
+            console.error('❌ Error loading sales data:', err);
+            alert('Failed to load sales data: ' + err.message);
         } finally {
             loadingDiv.style.display = 'none';
         }
     }
-
-    ['dailyDivision', 'dailyTerritory', 'dailyYear', 'dailyMonth'].forEach(id => {
-        document.getElementById(id).addEventListener('change', fetchAndRenderDailySales);
-    });
-
-    document.getElementById('dashboardTabs').addEventListener('click', e => {
-        if (e.target.id === 'DailySales-tab') {
-            fetchAndRenderDailySales();
-        }
-    });
-
     document.getElementById('divisionDropdown').addEventListener('change', async () => {
         divisionChart = await loadChart('divisionDropdown', divisionChart, 'divisionChart');
     });
@@ -391,7 +381,28 @@
         await loadRegionalBrandCharts();
     });
 
+
     window.onload = () => {
+        document.getElementById('divisionDropdown').dispatchEvent(new Event('change'));
+
+        const tabList = document.getElementById('dashboardTabs');
+        if (tabList) {
+            tabList.addEventListener('click', async (e) => {
+                const tab = e.target.closest('a');
+                if (tab && tab.id === 'DailySales-tab') {
+                    console.log("🟣 DailySales tab clicked");
+                    await fetchAndRenderDailySales();
+                }
+            });
+        }
+
+        // Attach other dropdown listeners too (safely inside onload)
+        ['dailyDivision', 'dailyTerritory', 'dailyYear', 'dailyMonth'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('change', fetchAndRenderDailySales);
+        });
+
+        // Trigger default chart
         document.getElementById('divisionDropdown').dispatchEvent(new Event('change'));
     };
 </script>

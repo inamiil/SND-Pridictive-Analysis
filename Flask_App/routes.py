@@ -116,8 +116,12 @@ def get_daily_sales_api():
     year = request.args.get('year', type=int)
     month = request.args.get('month', type=int)
 
+    # 🚨 Handle missing inputs
+    if not all([territory, division, year, month]):
+        return jsonify({"error": "Missing required parameters"}), 400
+
     df = get_geo_data()
     result = get_daily_sales_by_month_for_territory(df, territory, division)
 
     key = f"{year}-{str(month).zfill(2)}"
-    return jsonify(result.get(key, {}))  # Only return the selected month/year
+    return jsonify(result.get(key) or {"data": [], "top_3": [], "bottom_3": []})
