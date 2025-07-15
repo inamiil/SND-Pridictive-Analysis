@@ -93,7 +93,7 @@ def get_regional_brands_data():
 
 def get_geo_data():
     query = """
-    SELECT 10
+    SELECT TOP 1000
     DATE_ID,
     DAY,
     MONTH,
@@ -103,7 +103,7 @@ def get_geo_data():
     NET_SALE_AMOUNT
     FROM FINAL_QUERY
     """
-    return run_query(query, as_dataframe=False)
+    return run_query(query, as_dataframe=True)
 
 def run_query(query, as_dataframe=False):
     conn = get_connection()
