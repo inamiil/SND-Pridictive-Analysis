@@ -1,5 +1,7 @@
 import pandas as pd
-from .db_connect import get_sales_data
+from .db_connect import get_sales_data, run_query, get_national_brands_data, get_regional_brands_data
+
+# === Distributor Analysis ===
 
 def get_top_distributors(n=10):
     df = get_sales_data()
@@ -43,3 +45,13 @@ def get_distributor_type_sales():
     df['DISTRIBUTOR_TYPE'] = df['DISTRIBUTOR_NAME'].apply(classify)
     grouped = df.groupby('DISTRIBUTOR_TYPE')['NET_SALE_AMOUNT'].sum().reset_index()
     return grouped.to_dict(orient='records')
+
+
+# === Top Brands Analysis ===
+def get_national_top_brands():
+    return get_national_brands_data()
+
+def get_regional_top_brands():
+    return get_regional_brands_data()
+
+
