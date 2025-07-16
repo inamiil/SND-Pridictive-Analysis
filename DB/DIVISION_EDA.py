@@ -1,34 +1,67 @@
-# === Imports ===
 import pandas as pd
-from .db_connect import get_sales_data
+import matplotlib.pyplot as plt
+import seaborn as sns
+from db_connect import run_query
 
-def get_region_sales():
-    df = get_sales_data()
-    return df.groupby('REGION')['NET_SALE_AMOUNT'].sum().reset_index().to_dict(orient='records')
+# === SQL Query: Top Distributors Overall ===
+query = """
+SELECT 
+    DISTRIBUTOR_NAME,
+    DIVISION,
+    SUM(NET_SALE_AMOUNT) AS TOTAL_SALES
+FROM FINAL_QUERY
+WHERE DIVISION IN ('BISCONNI', 'CANDYLAND')
+GROUP BY DISTRIBUTOR_NAME, DIVISION
+"""
 
-def get_division_sales():
-    df = get_sales_data()
-    return df.groupby('DIVISION')['NET_SALE_AMOUNT'].sum().reset_index().to_dict(orient='records')
+# === Load Data ===
+df = pd.DataFrame(run_query(query))
 
-def get_yearly_sales_by_division():
-    df = get_sales_data()
-    filtered = df[df['DIVISION'].isin(['BISCONNI', 'CANDYLAND'])]
-    grouped = filtered.groupby(['YEAR', 'DIVISION'])['NET_SALE_AMOUNT'].sum().reset_index()
-    return grouped.to_dict(orient='records')
+# === Get Top 5 Distributors Overall ===
+top5 = (
+    df.groupby("DISTRIBUTOR_NAME")["TOTAL_SALES"]
+    .sum()
+    .nlargest(5)
+    .reset_index()
+)
 
-def get_monthly_sales_combined():
-    df = get_sales_data()
-    result = df.groupby(['YEAR', 'MONTH'])['NET_SALE_AMOUNT'].sum().reset_index()
-    return result.to_dict(orient='records')
+# === Merge to Get Division Info ===
+df_top5 = df[df["DISTRIBUTOR_NAME"].isin(top5["DISTRIBUTOR_NAME"])]
 
-def get_monthly_sales_by_division():
-    df = get_sales_data()
-    filtered = df[df['DIVISION'].isin(['BISCONNI', 'CANDYLAND'])]
-    grouped = filtered.groupby(['YEAR', 'MONTH', 'DIVISION'])['NET_SALE_AMOUNT'].sum().reset_index()
-    return grouped.to_dict(orient='records')
+# === Format Sales Numbers ===
+df_top5["SALES_LABEL"] = df_top5["TOTAL_SALES"].apply(
+    lambda x: f"{x/1_000_000:.1f}M" if x < 1_000_000_000 else f"{x/1_000_000_000:.2f}B"
+)
 
-def get_heatmap_data():
-    df = get_sales_data()
-    filtered = df[df['DIVISION'].isin(['BISCONNI', 'CANDYLAND'])]
-    grouped = filtered.groupby(['DIVISION', 'YEAR', 'MONTH'])['NET_SALE_AMOUNT'].sum().reset_index()
-    return grouped.to_dict(orient='records')
+# === Print Numeric Summary ===
+print("\n===============================")
+print("TOP 5 DISTRIBUTORS - TOTAL SALES")
+print("===============================")
+print(df_top5[["DISTRIBUTOR_NAME", "DIVISION", "TOTAL_SALES", "SALES_LABEL"]])
+
+# === Bar Chart ===
+plt.figure(figsize=(10, 6))
+sns.barplot(
+    data=df_top5,
+    x="DISTRIBUTOR_NAME",
+    y="TOTAL_SALES",
+    hue="DIVISION",
+    palette={"BISCONNI": "orange", "CANDYLAND": "blue"}
+)
+plt.title("Top 5 Distributors by Total Sales")
+plt.ylabel("Total Sales")
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+
+# === Pie Chart ===
+plt.figure(figsize=(7, 7))
+plt.pie(
+    top5["TOTAL_SALES"],
+    labels=top5["DISTRIBUTOR_NAME"],
+    autopct="%1.1f%%",
+    startangle=140
+)
+plt.title("Sales Share of Top 5 Distributors")
+plt.tight_layout()
+plt.show()
