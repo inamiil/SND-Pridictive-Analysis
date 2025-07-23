@@ -1,0 +1,185 @@
+import pandas as pd
+import numpy as np
+from db_connect import run_query
+from sklearn.model_selection import TimeSeriesSplit, GridSearchCV
+from sklearn.metrics import mean_absolute_error, r2_score
+from xgboost import XGBRegressor
+from sklearn.preprocessing import LabelEncoder
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+
+# === Custom Y-Axis Formatter ===
+def format_y_axis_as_k_or_m(ax):
+    formatter = ticker.FuncFormatter(lambda x, _: f'{x/1_000_000:.1f}M' if x >= 1_000_000 else f'{x/1_000:.0f}K')
+    ax.yaxis.set_major_formatter(formatter)
+
+# === Step 1: Load Data ===
+query = """
+SELECT 
+    REGION,
+    BRAND,
+    YEAR,
+    MONTH,
+    SUM(NET_SALE_AMOUNT) AS NET_SALE_AMOUNT
+FROM FINAL_QUERY
+GROUP BY REGION, BRAND, YEAR, MONTH
+ORDER BY REGION, BRAND, YEAR, MONTH
+"""
+raw_df = pd.DataFrame(run_query(query))
+
+# === Step 1.5: Filter to Top 3 Brands per Region ===
+top_brands = (
+    raw_df.groupby(["REGION", "BRAND"])["NET_SALE_AMOUNT"]
+    .sum()
+    .reset_index()
+    .sort_values(["REGION", "NET_SALE_AMOUNT"], ascending=[True, False])
+)
+top_3_brands_per_region = top_brands.groupby("REGION").head(3)[["REGION", "BRAND"]]
+raw_df = raw_df.merge(top_3_brands_per_region, on=["REGION", "BRAND"])
+
+# === Step 2: Prepare Features ===
+def prepare_features(df):
+    df["DATE"] = pd.to_datetime(df["YEAR"].astype(str) + "-" + df["MONTH"].astype(str).str.zfill(2) + "-01")
+    df = df.sort_values(["REGION", "BRAND", "DATE"])
+
+    df["NET_SALE_AMOUNT"] = pd.to_numeric(df["NET_SALE_AMOUNT"], errors="coerce").fillna(0)
+    df.loc[df["NET_SALE_AMOUNT"] < 0, "NET_SALE_AMOUNT"] = 0
+
+    all_dates = pd.date_range("2023-01-01", "2025-12-01", freq="MS")
+    full_index = pd.MultiIndex.from_product(
+        [df["REGION"].unique(), df["BRAND"].unique(), all_dates],
+        names=["REGION", "BRAND", "DATE"]
+    )
+    df = df.set_index(["REGION", "BRAND", "DATE"]).reindex(full_index, fill_value=0).reset_index()
+
+    df["MONTH_NUM"] = df["DATE"].dt.month
+    df["YEAR_NUM"] = df["DATE"].dt.year
+
+    df["LAG_1"] = df.groupby(["REGION", "BRAND"])["NET_SALE_AMOUNT"].shift(1)
+    df = df.dropna(subset=["LAG_1"])
+
+    df["LOG_SALES"] = np.log1p(df["NET_SALE_AMOUNT"])
+    df = df.replace([np.inf, -np.inf], np.nan).dropna(subset=["LOG_SALES"])
+
+    df["REGION_ENC"] = LabelEncoder().fit_transform(df["REGION"])
+    df["BRAND_ENC"] = LabelEncoder().fit_transform(df["BRAND"])
+
+    return df
+
+# === Step 3: Train Model ===
+def train_xgboost_model(X_train, y_train):
+    param_grid = {
+        'n_estimators': [150],
+        'max_depth': [5],
+        'learning_rate': [0.1]
+    }
+    model = XGBRegressor(random_state=42)
+    grid = GridSearchCV(model, param_grid, cv=TimeSeriesSplit(n_splits=3), scoring='neg_mean_absolute_error')
+    grid.fit(X_train, y_train)
+    return grid.best_estimator_, grid.best_params_
+
+# === Step 4: Forecast with Confidence Intervals ===
+def forecast_sales(model, df, forecast_start="2025-05-01", forecast_end="2025-12-01", residual_std=0.1, z=1.96):
+    future_dates = pd.date_range(forecast_start, forecast_end, freq="MS")
+    forecasts = []
+
+    for region in df["REGION"].unique():
+        for brand in df["BRAND"].unique():
+            brand_df = df[(df["REGION"] == region) & (df["BRAND"] == brand)].copy()
+
+            for date in future_dates:
+                month_num = date.month
+                lag_1 = brand_df[brand_df["DATE"] == date - pd.DateOffset(months=1)]["NET_SALE_AMOUNT"].values
+                if len(lag_1) == 0:
+                    continue
+                lag_1 = float(lag_1[0])
+
+                X = pd.DataFrame({
+                    "MONTH_NUM": [month_num],
+                    "LAG_1": [lag_1]
+                })
+
+                log_pred = model.predict(X)[0]
+                log_upper = log_pred + z * residual_std
+                log_lower = log_pred - z * residual_std
+
+                pred = np.expm1(log_pred)
+                upper = np.expm1(log_upper)
+                lower = np.expm1(log_lower)
+
+                new_row = {
+                    "REGION": region,
+                    "BRAND": brand,
+                    "DATE": date,
+                    "MONTH_NUM": month_num,
+                    "LAG_1": lag_1,
+                    "PREDICTED_SALES": pred,
+                    "CI_UPPER": upper,
+                    "CI_LOWER": lower
+                }
+                forecasts.append(new_row)
+
+                temp_row = new_row.copy()
+                temp_row["NET_SALE_AMOUNT"] = pred
+                brand_df = pd.concat([brand_df, pd.DataFrame([temp_row])], ignore_index=True)
+
+    return pd.DataFrame(forecasts)
+
+# === Step 5: Evaluate ===
+def evaluate_predictions(y_true, y_pred):
+    mae = mean_absolute_error(y_true, y_pred)
+    r2 = r2_score(y_true, y_pred)
+    return mae, r2
+
+# === Step 6: Pipeline Execution ===
+df = prepare_features(raw_df)
+
+train = df[df["YEAR_NUM"] < 2025]
+test = df[(df["YEAR_NUM"] == 2025) & (df["DATE"].dt.month <= 4)]
+
+features = ["MONTH_NUM", "LAG_1"]
+X_train = train[features]
+y_train = train["LOG_SALES"]
+X_test = test[features]
+y_test = test["LOG_SALES"]
+
+best_model, best_params = train_xgboost_model(X_train, y_train)
+
+test["PREDICTED_SALES"] = np.expm1(best_model.predict(X_test))
+test["ACTUAL_SALES"] = np.expm1(y_test)
+
+mae, r2 = evaluate_predictions(test["ACTUAL_SALES"], test["PREDICTED_SALES"])
+
+# Compute residual std for CI
+residuals = y_test - np.log1p(test["PREDICTED_SALES"])
+residual_std = residuals.std()
+
+# === Output Results ===
+print("Best Parameters:", best_params)
+print(f"MAE: {mae:,.2f} | R²: {r2:.3f}")
+
+# === Plot Actual vs Predicted ===
+for (region, brand), grp in test.groupby(["REGION", "BRAND"]):
+    plt.figure(figsize=(8, 4))
+    plt.plot(grp["DATE"], grp["ACTUAL_SALES"], label="Actual", marker="o")
+    plt.plot(grp["DATE"], grp["PREDICTED_SALES"], label="Predicted", marker="x")
+    plt.title(f"{region} - {brand}")
+    plt.legend()
+    format_y_axis_as_k_or_m(plt.gca())
+    plt.tight_layout()
+    plt.show()
+'''
+# === Forecast Future with CI ===
+forecast_df = forecast_sales(best_model, df, residual_std=residual_std)
+
+# === Plot Forecasts with Confidence Intervals ===
+for (region, brand), grp in forecast_df.groupby(["REGION", "BRAND"]):
+    plt.figure(figsize=(8, 4))
+    plt.plot(grp["DATE"], grp["PREDICTED_SALES"], label="Forecast", marker="o", color='blue')
+    plt.fill_between(grp["DATE"], grp["CI_LOWER"], grp["CI_UPPER"], color='blue', alpha=0.2, label="95% CI")
+    plt.title(f"Forecast: {region} - {brand}")
+    plt.legend()
+    format_y_axis_as_k_or_m(plt.gca())
+    plt.tight_layout()
+    plt.show()
+'''
