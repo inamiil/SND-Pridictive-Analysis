@@ -1,5 +1,9 @@
 from flask import Blueprint, render_template, jsonify, request
 from DB.db_connect import run_query, get_geo_data
+from DB.model.regionmodel_code import predict_sales
+from DB.EDA_Geographical import (get_daily_sales_by_month_for_territory)
+
+routes = Blueprint('routes', __name__)
 
 # DIVISION
 from DB.FRONTEND_DIVISION_EDA import (
@@ -20,15 +24,22 @@ from DB.eda_sku import (
     get_top_brand_packsize_combos, get_top_flavours_by_division
 )
 
-#Geographic (For now)
-from DB.EDA_Geographical import (get_daily_sales_by_month_for_territory)
-
-routes = Blueprint('routes', __name__)
-
 # === FRONTEND ===
 @routes.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('indexmodel.html')  # main page
+
+# === NEW FORECAST DASHBOARD ===
+@routes.route('/regionmodel')
+def model_page():
+    return render_template('regionmodel.html')  # This is the page you want to open
+
+@routes.route('/api/predict-forecast', methods=['POST'])
+def predict_forecast():
+    data = request.get_json()
+    division = data.get('division', '')
+    result = predict_sales(division)
+    return jsonify(result)
 
 # === DIVISION ===
 @routes.route('/api/region-sales')
@@ -106,13 +117,11 @@ def api_national_top_brands():
 def api_regional_top_brands():
     return jsonify(get_regional_top_brands())
 
-
-#---Anomaly Detection (Daily Sales Per Territory Monthly)---#
-# Flask route example
+# === Anomaly Detection (Daily Sales Per Territory Monthly) ===
 @routes.route('/api/daily-sales', methods=['GET'])
 def get_daily_sales_api():
     territory = request.args.get('territory')
-    division = request.args.get('division')  
+    division = request.args.get('division')
     year = request.args.get('year', type=int)
     month = request.args.get('month', type=int)
 

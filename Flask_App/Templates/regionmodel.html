@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Region Wise Sales Prediction</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #e6dfdf;
+        }
+
+        .header {
+            background: linear-gradient(to right, #1a4573, #6610f2);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            position: relative;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            font-weight: 300;
+        }
+
+        .back-button {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 8px 15px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .back-button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            color: white;
+            text-decoration: none;
+            transform: translateX(-2px);
+        }
+
+        .back-button::before {
+            content: "←";
+            font-size: 1.1rem;
+        }
+
+        /* Filters Bar Styling */
+        
+
+        .filters-bar .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex: 1;
+        }
+
+        .filters-bar label {
+            font-weight: 600;
+            color: #495057;
+            min-width: 120px;
+            margin: 0;
+            font-size: 0.95rem;
+        }
+
+        .filters-bar .form-select {
+            flex: 1;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 10px 12px;
+            transition: all 0.3s ease;
+            font-size: 0.95rem;
+        }
+
+        .filters-bar .form-select:focus {
+            border-color: #6610f2;
+            box-shadow: 0 0 0 0.2rem rgba(102, 16, 242, 0.25);
+        }
+
+        #loader {
+            display: none;
+        }
+
+        #regionLineChart {
+            margin-top: 20px;
+        }
+
+        .select2-container--default .select2-selection--multiple {
+            border: 2px solid #e9ecef !important;
+            border-radius: 8px !important;
+            min-height: 42px !important;
+        }
+
+        .select2-container--default.select2-container--focus .select2-selection--multiple {
+            border-color: #6610f2 !important;
+        }
+
+        .select2-container {
+            flex: 1 !important;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .header p {
+                font-size: 1rem;
+            }
+
+            .back-button {
+                top: 15px;
+                left: 15px;
+                padding: 6px 12px;
+                font-size: 0.8rem;
+            }
+
+            .filters-bar {
+                padding: 15px 20px;
+            }
+
+            .filters-bar .d-flex {
+                flex-direction: column;
+                gap: 20px;
+            }
+
+            .filters-bar .filter-group {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 8px;
+            }
+
+            .filters-bar label {
+                min-width: auto;
+                font-size: 0.9rem;
+            }
+        }
+    </style>
+</head>
+
+<body class="bg-light">
+    <div class="header">
+        <a href="/" class="back-button">Back</a>
+        <h1>Region Wise Sales Prediction</h1>
+        <p>Analyze regional sales performance and forecast future trends with advanced AI-powered insights.</p>
+    </div>
+
+    <div class="container py-5">
+        <!-- Filters -->
+          <div class="container py-5">
+        <!-- Enhanced Filters Bar -->
+        <div class="filters-bar">
+            <div class="d-flex align-items-center gap-4">
+                <div class="filter-group" id="regionFilterWrapper">
+                    <label>Select Region</label>
+                    <select id="regionFilters" class="form-select" multiple></select>
+                </div>
+
+                <div class="filter-group" id="divisionFilterWrapper">
+                    <label for="divisionSelect" class="form-label">Select Division</label>
+                    <select id="divisionSelect" class="form-select">
+                        <option value="">All Divisions</option>
+                        <option value="BISCONNI">BISCONNI</option>
+                        <option value="CANDYLAND">CANDYLAND</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loader -->
+        <div id="loader" class="text-center my-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <div class="mt-2">Loading forecast...</div>
+        </div>
+
+        <!-- Chart -->
+        <canvas id="regionLineChart" height="130"></canvas>
+    </div>
+
+    <!-- External Scripts -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+
+    <!-- Combined JS -->
+    <script>
+        let regionChart = null;
+        let fullData = null;
+
+        const loader = document.getElementById('loader');
+        const regionFilterWrapper = document.getElementById('regionFilterWrapper');
+        const divisionSelect = document.getElementById('divisionSelect');
+        const divisionWrapper = document.getElementById('divisionFilterWrapper');
+
+        // Load forecast data
+        function loadForecastData(division) {
+            loader.style.display = 'block';
+            regionFilterWrapper.classList.add('d-none');
+            divisionWrapper.classList.add('d-none');
+
+            fetch('/api/predict-forecast', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ division })
+            })
+                .then(res => res.json())
+                .then(data => {
+                    fullData = data.summary_table;
+                    const regions = data.regions;
+
+                    renderRegionFilters(regions);
+                    drawChart(regions);
+
+                    loader.style.display = 'none';
+                    regionFilterWrapper.classList.remove('d-none');
+                    divisionWrapper.classList.remove('d-none');
+
+                    $('#regionFilters').select2({
+                        placeholder: 'Select region(s)',
+                        width: '100%'
+                    });
+
+                    $('#regionFilters').val(regions).trigger('change');
+                })
+                .catch(error => {
+                    console.error("Error fetching forecast:", error);
+                    loader.style.display = 'none';
+                });
+        }
+
+        // Page Load
+        window.addEventListener('DOMContentLoaded', function () {
+            const defaultDivision = divisionSelect.value || '';
+            loadForecastData(defaultDivision);
+
+            divisionSelect.addEventListener('change', function () {
+                loadForecastData(this.value);
+            });
+        });
+
+        // Render region filters
+        function renderRegionFilters(regions) {
+            const select = document.getElementById('regionFilters');
+            select.innerHTML = '';
+
+            const defaultOption = document.createElement('option');
+            defaultOption.value = '';
+            defaultOption.text = 'All regions';
+            select.appendChild(defaultOption);
+
+            regions.forEach(region => {
+                const option = document.createElement('option');
+                option.value = region;
+                option.text = region;
+                select.appendChild(option);
+            });
+
+            $(select).off('change').on('change', function () {
+                const selectedRegions = $(this).val();
+                drawChart(selectedRegions);
+            });
+        }
+
+        // Draw chart
+        function drawChart(selectedRegions) {
+            const ctx = document.getElementById('regionLineChart').getContext('2d');
+
+            if (regionChart) regionChart.destroy();
+
+            const regionColors = {
+                NORTH: 'rgb(54, 162, 235)',
+                SOUTH: 'rgb(255, 99, 132)',
+                EAST: 'rgb(255, 206, 86)',
+                WEST: 'rgb(75, 192, 192)',
+                CENTRAL: 'rgb(153, 102, 255)'
+            };
+
+            const datasets = [];
+
+            selectedRegions.forEach(region => {
+                const regionData = fullData.filter(item => item.REGION === region);
+
+                datasets.push({
+                    label: `${region} (Actual)`,
+                    data: regionData.map(item => item.MONTHLY_SALES),
+                    borderColor: regionColors[region] || getRandomColor(),
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    tension: 0.4,
+                    pointStyle: 'circle'
+                });
+
+                datasets.push({
+                    label: `${region} (Predicted)`,
+                    data: regionData.map(item => item.PREDICTED_SALES),
+                    borderColor: regionColors[region] || getRandomColor(),
+                    backgroundColor: 'transparent',
+                    borderDash: [5, 5],
+                    borderWidth: 2,
+                    tension: 0.4,
+                    pointStyle: 'cross'
+                });
+            });
+
+            const allDates = [...new Set(fullData.map(item => item.DATE))];
+            const formattedLabels = allDates.map(d => {
+                const dateObj = new Date(d);
+                return dateObj.toLocaleString('default', { month: 'short', year: 'numeric' });
+            });
+
+            regionChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: formattedLabels,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'bottom' },
+                        tooltip: {
+                            callbacks: {
+                                label: function (ctx) {
+                                    const val = ctx.parsed.y;
+                                    return `${ctx.dataset.label}: ${val >= 1_000_000
+                                        ? (val / 1_000_000).toFixed(1) + 'M'
+                                        : (val / 1_000).toFixed(0) + 'K'}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            ticks: {
+                                callback: function (value) {
+                                    return value >= 1_000_000
+                                        ? value / 1_000_000 + 'M'
+                                        : value / 1_000 + 'K';
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Monthly Sales Units'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function getRandomColor() {
+            return 'hsl(' + 360 * Math.random() + ', 70%, 60%)';
+        }
+    </script>
+</body>
+
+</html>
