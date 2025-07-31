@@ -63,19 +63,21 @@ def prepare_features(df):
     df["ROLLING_MEAN_6"] = df.groupby(["REGION", "BRAND"])["NET_SALE_AMOUNT"].transform(lambda x: x.rolling(6, min_periods=1).mean())
     df["MONTH_SIN"] = np.sin(2 * np.pi * df["MONTH_NUM"] / 12)
     df["MONTH_COS"] = np.cos(2 * np.pi * df["MONTH_NUM"] / 12)
-
-    q1 = df["NET_SALE_AMOUNT"].quantile(0.01)
-    q99 = df["NET_SALE_AMOUNT"].quantile(0.99)
-    df["NET_SALE_AMOUNT"] = df["NET_SALE_AMOUNT"].clip(q1, q99)
+    # === Outlier Removal ===
+    Q1 = df["NET_SALE_AMOUNT"].quantile(0.01)
+    Q3 = df["NET_SALE_AMOUNT"].quantile(0.99)
+    IQR = Q3 - Q1
+    df = df[(df["NET_SALE_AMOUNT"] >= Q1 - 1.5 * IQR) & (df["NET_SALE_AMOUNT"] <= Q3 + 1.5 * IQR)]
 
     df = df.dropna(subset=["LAG_1", "LAG_2", "LAG_3"])
     df["LOG_SALES"] = np.log1p(df["NET_SALE_AMOUNT"])
     df.replace([np.inf, -np.inf], np.nan, inplace=True)
     df.dropna(inplace=True)
 
-    df["BRAND_ENC"] = LabelEncoder().fit_transform(df["BRAND"])  # REGION not encoded anymore
+    brand_encoder = LabelEncoder()
+    df["BRAND_ENC"] = brand_encoder.fit_transform(df["BRAND"])
 
-    return df
+    return df, brand_encoder
 
 # === Step 3: Train Model ===
 def train_xgboost_model(X_train, y_train):
@@ -93,11 +95,12 @@ def train_xgboost_model(X_train, y_train):
     return grid.best_estimator_, grid.best_params_
 
 # === Step 4: Region-Wise Training and Evaluation ===
-df = prepare_features(raw_df)
-features = ["MONTH_NUM", "LAG_1", "LAG_2", "LAG_3", "ROLLING_MEAN_3", "ROLLING_MEAN_6", "BRAND_ENC","MONTH_SIN","MONTH_COS"]
+df, brand_encoder = prepare_features(raw_df)
+features = ["MONTH_NUM", "LAG_1", "LAG_2", "LAG_3", "ROLLING_MEAN_3", "ROLLING_MEAN_6", "BRAND_ENC", "MONTH_SIN", "MONTH_COS"]
 
 regions = df["REGION"].unique()
 region_metrics = {}
+trained_models = {}
 
 for region in regions:
     region_df = df[df["REGION"] == region]
@@ -111,15 +114,19 @@ for region in regions:
     y_test = test["LOG_SALES"]
 
     best_model, best_params = train_xgboost_model(X_train, y_train)
-    test["PREDICTED_SALES"] = np.expm1(best_model.predict(X_test))
-    test["ACTUAL_SALES"] = np.expm1(y_test)
+    trained_models[region] = best_model
+
+    test["PREDICTED_SALES"] = np.expm1(best_model.predict(X_test)).round(0).astype(int)
+    test["ACTUAL_SALES"] = np.expm1(y_test).round(0).astype(int)
 
     mae = mean_absolute_error(test["ACTUAL_SALES"], test["PREDICTED_SALES"])
     r2 = r2_score(test["ACTUAL_SALES"], test["PREDICTED_SALES"])
     region_metrics[region] = {"MAE": mae, "R2": r2, "Params": best_params}
 
-    # === Plotting Actual vs Predicted ===
     for (region_, brand), grp in test.groupby(["REGION", "BRAND"]):
+        print(f"\nRegion: {region_} | Brand: {brand}")
+        print(grp[["DATE", "ACTUAL_SALES", "PREDICTED_SALES"]].to_string(index=False))
+
         plt.figure(figsize=(8, 4))
         plt.plot(grp["DATE"], grp["ACTUAL_SALES"], label="Actual", marker="o")
         plt.plot(grp["DATE"], grp["PREDICTED_SALES"], label="Predicted", marker="x")
@@ -134,3 +141,158 @@ for region, metrics in region_metrics.items():
     print(f"\nRegion: {region}")
     print(f"Best Params: {metrics['Params']}")
     print(f"MAE: {metrics['MAE']:,.2f} | R²: {metrics['R2']:.3f}")
+
+importances = {}
+for region, model in trained_models.items():
+    booster = model.get_booster()
+    fmap = booster.get_score(importance_type='weight')  # 'weight', 'gain', 'cover'
+    sorted_importance = sorted(fmap.items(), key=lambda x: x[1], reverse=True)
+    importances[region] = sorted_importance
+    print(f"\nFeature Importance for {region}:")
+    for feat, score in sorted_importance:
+        print(f"{feat}: {score}")
+
+    # Plot bar chart
+    plt.figure(figsize=(8, 4))
+    features_, scores_ = zip(*sorted_importance)
+    plt.barh(features_, scores_, color='skyblue')
+    plt.title(f"Feature Importance - {region}")
+    plt.xlabel("Importance Score")
+    plt.tight_layout()
+    plt.show()
+
+# === Combine Actual 2024 Sales and Predicted 2025 Sales ===
+combined_df_list = []
+
+for region in regions:
+    region_df = df[df["REGION"] == region]
+
+    # Actual sales for 2024
+    actual_2024 = region_df[(region_df["YEAR_NUM"] == 2024)][["DATE", "REGION", "BRAND", "NET_SALE_AMOUNT"]].copy()
+    actual_2024["TYPE"] = "Actual 2024"
+    actual_2024.rename(columns={"NET_SALE_AMOUNT": "SALES"}, inplace=True)
+
+    # Predicted sales for 2025 (Jan-Apr)
+    test = region_df[(region_df["YEAR_NUM"] == 2025) & (region_df["DATE"].dt.month <= 4)].copy()
+    model = trained_models[region]
+    X_test = test[features]
+    test["SALES"] = np.expm1(model.predict(X_test)).round(0).astype(int)
+    test["TYPE"] = "Predicted 2025"
+
+    pred_2025 = test[["DATE", "REGION", "BRAND", "SALES", "TYPE"]]
+
+    combined = pd.concat([actual_2024, pred_2025], axis=0)
+    combined_df_list.append(combined)
+    # Train data up to March 2025
+    train = region_df[(region_df["DATE"] < "2025-04-01")]
+    # === Forecast Apr–Dec 2025 Recursively ===
+future_dates = pd.date_range("2025-04-01", "2025-12-01", freq="MS")
+region_forecast_df = region_df.copy()
+
+# Initialize a DataFrame to collect forecasts
+forecast_results = []
+
+for forecast_date in future_dates:
+    # Prepare feature row for this date
+    temp_df = region_forecast_df[region_forecast_df["DATE"] == forecast_date].copy()
+
+    # If no data, skip
+    if temp_df.empty:
+        continue
+
+    # Predict using the model
+    X_forecast = temp_df[features]
+    predicted_log_sales = best_model.predict(X_forecast)
+    predicted_sales = np.expm1(predicted_log_sales).round(0).astype(int)
+
+    temp_df["PREDICTED_SALES"] = predicted_sales
+    forecast_results.append(temp_df[["REGION", "BRAND", "DATE", "PREDICTED_SALES"]])
+
+    # Update NET_SALE_AMOUNT with prediction for future lag calculation
+    region_forecast_df.loc[region_forecast_df["DATE"] == forecast_date, "NET_SALE_AMOUNT"] = predicted_sales
+    region_forecast_df["LAG_1"] = region_forecast_df.groupby(["REGION", "BRAND"])["NET_SALE_AMOUNT"].shift(1)
+    region_forecast_df["LAG_2"] = region_forecast_df.groupby(["REGION", "BRAND"])["NET_SALE_AMOUNT"].shift(2)
+    region_forecast_df["LAG_3"] = region_forecast_df.groupby(["REGION", "BRAND"])["NET_SALE_AMOUNT"].shift(3)
+    region_forecast_df["ROLLING_MEAN_3"] = region_forecast_df.groupby(["REGION", "BRAND"])["NET_SALE_AMOUNT"].transform(lambda x: x.rolling(3, min_periods=1).mean())
+    region_forecast_df["ROLLING_MEAN_6"] = region_forecast_df.groupby(["REGION", "BRAND"])["NET_SALE_AMOUNT"].transform(lambda x: x.rolling(6, min_periods=1).mean())
+
+# Combine forecast results
+forecast_df = pd.concat(forecast_results, axis=0)
+forecast_df["TYPE"] = "Forecast 2025"
+forecast_df.rename(columns={"PREDICTED_SALES": "SALES"}, inplace=True)
+
+combined_df_list.append(forecast_df)
+
+# === Plot Forecasts ===
+for (region_, brand), grp in forecast_df.groupby(["REGION", "BRAND"]):
+    print(f"\nRegion: {region_} | Brand: {brand} | Forecast Apr–Dec 2025")
+    print(grp[["DATE", "SALES"]].to_string(index=False))
+
+    plt.figure(figsize=(8, 4))
+    plt.plot(grp["DATE"], grp["SALES"], label="Forecast", marker="x")
+    plt.title(f"{region_} - {brand} (Forecast Apr–Dec 2025)")
+    plt.legend()
+    format_y_axis_as_k_or_m(plt.gca())
+    plt.tight_layout()
+    plt.show()
+
+    # Forecast target: Apr–Dec 2025
+    forecast = region_df[(region_df["DATE"] >= "2025-04-01") & (region_df["DATE"] <= "2025-12-01")]
+
+    X_train = train[features]
+    y_train = train["LOG_SALES"]
+    X_forecast = forecast[features]
+
+    best_model, best_params = train_xgboost_model(X_train, y_train)
+    trained_models[region] = best_model
+
+    forecast["PREDICTED_SALES"] = np.expm1(best_model.predict(X_forecast)).round(0).astype(int)
+
+    for (region_, brand), grp in forecast.groupby(["REGION", "BRAND"]):
+        print(f"\nRegion: {region_} | Brand: {brand} | Forecast Apr–Dec 2025")
+        print(grp[["DATE", "PREDICTED_SALES"]].to_string(index=False))
+
+        plt.figure(figsize=(8, 4))
+        plt.plot(grp["DATE"], grp["PREDICTED_SALES"], label="Forecast", marker="x")
+        plt.title(f"{region_} - {brand} (Forecast Apr–Dec 2025)")
+        plt.legend()
+        format_y_axis_as_k_or_m(plt.gca())
+        plt.tight_layout()
+        plt.show()
+
+# Merge all regions' data
+combined_df = pd.concat(combined_df_list, axis=0)
+
+brands = df["BRAND"].unique()
+
+for brand in brands:
+    plt.figure(figsize=(10, 5))
+    for region in regions:
+        brand_region_df = combined_df[(combined_df["BRAND"] == brand) & (combined_df["REGION"] == region)]
+
+        # Plot Actual 2024 and Predicted 2025 with existing styles
+        for t, style in zip(["Actual 2024", "Predicted 2025"], [("-", "o"), ("--", "x")]):
+            sub_df = brand_region_df[brand_region_df["TYPE"] == t]
+            plt.plot(sub_df["DATE"], sub_df["SALES"], label=f"{region} - {t}", linestyle=style[0], marker=style[1])
+
+        # === Draw connecting line from Dec 2024 to Jan 2025 ===
+        actual_df = brand_region_df[(brand_region_df["TYPE"] == "Actual 2024")]
+        pred_df = brand_region_df[(brand_region_df["TYPE"] == "Predicted 2025")]
+
+        if not actual_df.empty and not pred_df.empty:
+            # Get December 2024 point
+            dec_point = actual_df[actual_df["DATE"].dt.month == 12]
+            # Get January 2025 point
+            jan_point = pred_df[pred_df["DATE"].dt.month == 1]
+
+            if not dec_point.empty and not jan_point.empty:
+                x_values = [dec_point["DATE"].values[0], jan_point["DATE"].values[0]]
+                y_values = [dec_point["SALES"].values[0], jan_point["SALES"].values[0]]
+                plt.plot(x_values, y_values, color='gray', linestyle=':', linewidth=1)
+
+    plt.title(f"Sales Comparison for Brand: {brand}")
+    plt.legend()
+    format_y_axis_as_k_or_m(plt.gca())
+    plt.tight_layout()
+    plt.show()
+

@@ -34,6 +34,10 @@ def index():
 def model_page():
     return render_template('regionmodel.html')  # This is the page you want to open
 
+@routes.route('/brandmodel')
+def model2_page():
+    return render_template('regionmodel.html')  # This is the page you want to open
+
 @routes.route('/api/predict-forecast', methods=['POST'])
 def predict_forecast():
     data = request.get_json()
