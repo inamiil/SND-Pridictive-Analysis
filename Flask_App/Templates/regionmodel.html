@@ -160,37 +160,41 @@
         <p>Analyze regional sales performance and forecast future trends with advanced AI-powered insights.</p>
     </div>
 
-    <div class="container py-5">
-        <!-- Filters -->
-          <div class="container py-5">
-        <!-- Enhanced Filters Bar -->
-        <div class="filters-bar">
-            <div class="d-flex align-items-center gap-4">
-                <div class="filter-group" id="regionFilterWrapper">
-                    <label>Select Region</label>
-                    <select id="regionFilters" class="form-select" multiple></select>
-                </div>
 
-                <div class="filter-group" id="divisionFilterWrapper">
-                    <label for="divisionSelect" class="form-label">Select Division</label>
-                    <select id="divisionSelect" class="form-select">
-                        <option value="">All Divisions</option>
-                        <option value="BISCONNI">BISCONNI</option>
-                        <option value="CANDYLAND">CANDYLAND</option>
-                    </select>
-                </div>
+
+  <div class="container py-5">
+    <!-- Filters -->
+    <div class="filters-bar">
+        <div class="d-flex align-items-center gap-4">
+            <div class="filter-group" id="regionFilterWrapper">
+                <label>Select Region</label>
+                <select id="regionFilters" class="form-select" multiple></select>
+            </div>
+
+            <div class="filter-group" id="divisionFilterWrapper">
+                <label for="divisionSelect" class="form-label">Select Division</label>
+                <select id="divisionSelect" class="form-select">
+                    <option value="">All Divisions</option>
+                    <option value="BISCONNI">BISCONNI</option>
+                    <option value="CANDYLAND">CANDYLAND</option>
+                </select>
             </div>
         </div>
-
-        <!-- Loader -->
-        <div id="loader" class="text-center my-5">
-            <div class="spinner-border text-primary" role="status"></div>
-            <div class="mt-2">Loading forecast...</div>
-        </div>
-
-        <!-- Chart -->
-        <canvas id="regionLineChart" height="130"></canvas>
     </div>
+
+    <!-- Loader -->
+    <div id="loader" class="text-center my-5">
+        <div class="spinner-border text-primary" role="status"></div>
+        <div class="mt-2">Loading forecast...</div>
+    </div>
+
+    <!-- Historical Chart -->
+    <canvas id="regionLineChart" height="130"></canvas>
+
+    <!-- Forecast Chart -->
+    <h4 class="text-center mt-5 mb-3">Forecasted Sales (Future Months)</h4>
+    <canvas id="forecastChart" height="120"></canvas>
+</div>
 
     <!-- External Scripts -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -202,6 +206,8 @@
     <script>
         let regionChart = null;
         let fullData = null;
+        let forecastChart = null;
+
 
         const loader = document.getElementById('loader');
         const regionFilterWrapper = document.getElementById('regionFilterWrapper');
@@ -223,9 +229,13 @@
                 .then(data => {
                     fullData = data.summary_table;
                     const regions = data.regions;
+                    const forecastData = data.forecast_table;
+                    console.log("📊 Forecast Data:", forecastData);
 
                     renderRegionFilters(regions);
                     drawChart(regions);
+                    drawForecastChart(regions, forecastData);  // Forecast chart
+
 
                     loader.style.display = 'none';
                     regionFilterWrapper.classList.remove('d-none');
@@ -363,6 +373,86 @@
                 }
             });
         }
+
+        function drawForecastChart(selectedRegions, forecastData) {
+    const ctx = document.getElementById('forecastChart').getContext('2d');
+
+    if (forecastChart) forecastChart.destroy();
+
+    const regionColors = {
+        NORTH: 'rgb(54, 162, 235)',
+        SOUTH: 'rgb(255, 99, 132)',
+        EAST: 'rgb(255, 206, 86)',
+        WEST: 'rgb(75, 192, 192)',
+        CENTRAL: 'rgb(153, 102, 255)'
+    };
+
+    const datasets = [];
+
+    selectedRegions.forEach(region => {
+        const regionForecast = forecastData.filter(item => item.REGION === region);
+
+        datasets.push({
+            label: `${region} (Forecast)`,
+            data: regionForecast.map(item => item.PREDICTED_SALES),
+            borderColor: regionColors[region] || getRandomColor(),
+            backgroundColor: 'transparent',
+            borderDash: [3, 3],
+            borderWidth: 2,
+            tension: 0.4,
+            pointStyle: 'triangle'
+        });
+    });
+
+    const allForecastDates = [
+        ...new Set(forecastData.map(item => item.DATE))
+    ];
+
+    const formattedLabels = allForecastDates.map(d => {
+        const dateObj = new Date(d);
+        return dateObj.toLocaleString('default', { month: 'short', year: 'numeric' });
+    });
+
+    forecastChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: formattedLabels,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom' },
+                tooltip: {
+                    callbacks: {
+                        label: function (ctx) {
+                            const val = ctx.parsed.y;
+                            return `${ctx.dataset.label}: ${val >= 1_000_000
+                                ? (val / 1_000_000).toFixed(1) + 'M'
+                                : (val / 1_000).toFixed(0) + 'K'}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    ticks: {
+                        callback: function (value) {
+                            return value >= 1_000_000
+                                ? value / 1_000_000 + 'M'
+                                : value / 1_000 + 'K';
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Forecasted Sales Units'
+                    }
+                }
+            }
+        }
+    });
+}
+
 
         function getRandomColor() {
             return 'hsl(' + 360 * Math.random() + ', 70%, 60%)';

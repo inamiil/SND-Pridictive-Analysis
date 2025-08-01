@@ -153,7 +153,13 @@ def generate_sales_forecast(var_region=None):
     combined_all = pd.concat(combined_df_list)
     actual_vs_predicted_all = pd.concat(actual_vs_predicted_list)
 
-    # === Return as API Response ===
+    combined_all = pd.concat(combined_df_list)
+ 
+    # === National-Level Combined Sales ===
+    combined_national = combined_all.groupby(["BRAND", "DATE", "TYPE"])["SALES"].sum().reset_index()
+    national_sales_records = combined_national.to_dict(orient="records")  # Ready for frontend
+        # === Return as API Response ===
+        
     return {
         "summary": combined_all.to_dict(orient="records"),
         "actual_vs_predicted": actual_vs_predicted_all.to_dict(orient="records"),
