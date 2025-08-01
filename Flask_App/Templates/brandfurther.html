@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brand Sales Forecast</title>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- Date-fns Adapter for Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <!-- Vanilla CSS -->
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+       .header {
+        background: linear-gradient(to right, #1a4573, #6610f2); /* blue to violet gradient */
+        color: white;
+        padding: 30px 20px;
+        text-align: center;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        position: relative;
+    }
+
+    .header h1 {
+        font-size: 2.5rem;          /* large size */
+        font-weight: 600;           /* bold */
+        margin-bottom: 10px;
+    }
+
+    .header p {
+        font-size: 1.2rem;          /* subtitle below heading */
+        font-weight: 300;
+    }
+
+        .filter-section {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        .filter-group {
+            max-width: 300px;
+        }
+        .filter-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .filter-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            background-color: #007bff;
+            color: #fff;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .charts-section {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+        .chart-container {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .chart-container h2 {
+            font-size: 18px;
+            margin-bottom: 15px;
+        }
+
+                .back-button {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: rgb(17, 2, 2);
+            padding: 8px 15px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .back-button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            color: rgb(27, 2, 2);
+            text-decoration: none;
+            transform: translateX(-2px);
+        }
+
+        .back-button::before {
+            content: "←";
+            font-size: 1.1rem;
+        }
+
+
+        @media (min-width: 1024px) {
+            .charts-section {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+     <div class="header">
+            <a href="/" class="back-button">Back</a>
+        <h1>Brand Sales Forecast</h1>
+        </div>
+
+        <!-- Filter Section -->
+        <!-- Filter Section -->
+        <div class="filter-section">
+            <div class="filter-group">
+                <label for="brand-select">Brand</label>
+                <select id="brand-select"></select>
+            </div>
+            <div class="filter-group" style="margin-top: 15px;">
+                <label for="region-select">Region</label>
+                <select id="region-select"></select>
+            </div>
+            <button id="apply-filter" class="btn btn-primary mt-2" disabled>Apply Filter</button>
+        </div>
+
+
+        <!-- Charts Section -->
+        <div class="charts-section">
+            <!-- Sales Over Time Chart -->
+            <div class="chart-container">
+                <h2>Sales Over Time</h2>
+                <canvas id="salesChart"></canvas>
+            </div>
+            <!-- Actual vs Predicted Chart -->
+            <div class="chart-container">
+                <h2>Actual vs Predicted (Jan-Apr 2025)</h2>
+                <canvas id="actualVsPredictedChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const apiBaseUrl = 'http://localhost:5000/api';
+            let salesChart, actualVsPredictedChart;
+
+            // Initialize charts
+            const salesChartCtx = document.getElementById('salesChart').getContext('2d');
+            salesChart = new Chart(salesChartCtx, {
+                type: 'line',
+                data: { datasets: [] },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: { unit: 'month' },
+                            title: { display: true, text: 'Months' },
+                            adapters: { date: { locale: window.dateFnsLocale } }
+                        },
+                        y: { title: { display: true, text: 'Net Sale Amount' }, beginAtZero: true }
+                    },
+                    plugins: { legend: { display: true } }
+                }
+            });
+
+            const actualVsPredictedChartCtx = document.getElementById('actualVsPredictedChart').getContext('2d');
+            actualVsPredictedChart = new Chart(actualVsPredictedChartCtx, {
+                type: 'bar',
+                data: { datasets: [] },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: { title: { display: true, text: 'Months' } },
+                        y: { title: { display: true, text: 'Net Sale Amount ' }, beginAtZero: true }
+                    },
+                    plugins: { legend: { display: true } }
+                }
+            });
+
+            // Fetch brands
+            async function fetchBrands() {
+                try {
+                    const response = await fetch(`${apiBaseUrl}/brands`);
+                    const { status, data } = await response.json();
+                    if (status !== 'success') throw new Error('Failed to fetch brands');
+                    const brandSelect = document.getElementById('brand-select');
+                    brandSelect.innerHTML = '';
+                    data.forEach(brand => {
+                        const option = document.createElement('option');
+                        option.value = brand;
+                        option.textContent = brand;
+                        brandSelect.appendChild(option);
+                    });
+                } catch (error) {
+                    console.error('Error fetching brands:', error);
+                    alert('Failed to load brands');
+                }
+            }
+
+            // Inside DOMContentLoaded block (after fetchBrands)
+            async function fetchRegions() {
+                try {
+                    const response = await fetch(`${apiBaseUrl}/regions`);
+                    const { status, data } = await response.json();
+                    if (status !== 'success') throw new Error('Failed to fetch regions');
+                    const regionSelect = document.getElementById('region-select');
+                    regionSelect.innerHTML = '';
+                    data.forEach(region => {
+                        const option = document.createElement('option');
+                        option.value = region;
+                        option.textContent = region;
+                        regionSelect.appendChild(option);
+                    });
+                } catch (error) {
+                    console.error('Error fetching regions:', error);
+                    alert('Failed to load regions');
+                }
+            }
+
+            // Fetch and plot summary data
+            // 🌐 UPDATE API URL with brand & region
+        async function fetchSummary(brand = '', region = '') {
+            try {
+                let url = `${apiBaseUrl}/summary`;
+                const params = [];
+                if (brand) params.push(`brand=${encodeURIComponent(brand)}`);
+                if (region) params.push(`region=${encodeURIComponent(region)}`);
+                if (params.length) url += `?${params.join('&')}`;
+
+                const response = await fetch(url);
+                const { status, data } = await response.json();
+                if (status !== 'success') throw new Error('Failed to fetch summary data');
+
+                const datasets = [
+                    { label: 'Actual 2024', data: [], borderColor: '#3b82f6', fill: false },
+                    { label: 'Predicted Jan-Apr 2025', data: [], borderColor: '#10b981', fill: false },
+                    { label: 'Forecast Apr-Dec 2025', data: [], borderColor: '#f59e0b', fill: false }
+                ];
+
+                data.forEach(item => {
+                    const date = item.DATE;
+                    const sales = item.SALES;
+                    if (item.TYPE === 'Actual 2024') {
+                        datasets[0].data.push({ x: date, y: sales });
+                    } else if (item.TYPE === 'Predicted Jan-Apr 2025') {
+                        datasets[1].data.push({ x: date, y: sales });
+                    } else if (item.TYPE === 'Forecast Apr-Dec 2025') {
+                        datasets[2].data.push({ x: date, y: sales });
+                    }
+                });
+
+                salesChart.data.datasets = datasets;
+                salesChart.update();
+            } catch (error) {
+                console.error('Error fetching summary:', error);
+                alert('Failed to load sales data');
+            }
+        }
+
+
+            // Fetch and plot actual vs predicted data
+            // 🌐 UPDATE API URL with brand & region
+        async function fetchActualVsPredicted(brand = '', region = '') {
+            try {
+                let url = `${apiBaseUrl}/actual-vs-predicted`;
+                const params = [];
+                if (brand) params.push(`brand=${encodeURIComponent(brand)}`);
+                if (region) params.push(`region=${encodeURIComponent(region)}`);
+                if (params.length) url += `?${params.join('&')}`;
+
+                const response = await fetch(url);
+                const { status, data } = await response.json();
+                if (status !== 'success') throw new Error('Failed to fetch actual vs predicted data');
+
+                const labels = [...new Set(data.map(item => item.DATE))];
+                const actualData = labels.map(date => {
+                    const item = data.find(d => d.DATE === date && d.ACTUAL !== null);
+                    return item ? item.ACTUAL : 0;
+                });
+                const predictedData = labels.map(date => {
+                    const item = data.find(d => d.DATE === date);
+                    return item ? item.SALES : 0;
+                });
+
+                actualVsPredictedChart.data = {
+                    labels,
+                    datasets: [
+                        { label: 'Actual', data: actualData, backgroundColor: '#3b82f6' },
+                        { label: 'Predicted', data: predictedData, backgroundColor: '#10b981' }
+                    ]
+                };
+                actualVsPredictedChart.update();
+            } catch (error) {
+                console.error('Error fetching actual vs predicted:', error);
+                alert('Failed to load actual vs predicted data');
+            }
+        }
+
+
+            // Modify event listener
+            document.getElementById('apply-filter').addEventListener('click', () => {
+                const brand = document.getElementById('brand-select').value;
+                const region = document.getElementById('region-select').value;
+                fetchSummary(brand, region);
+                fetchActualVsPredicted(brand, region);
+            });
+
+            // Initial load
+            fetchBrands();
+            fetchRegions(); 
+            fetchSummary();
+            fetchActualVsPredicted();
+
+
+            const brandSelect = document.getElementById("brand-select");
+            const regionSelect = document.getElementById("region-select");
+            const applyFilterButton = document.getElementById("apply-filter");
+
+            function checkFilters() {
+                const brandSelected = brandSelect.value.trim() !== '';
+                const regionSelected = regionSelect.value.trim() !== '';
+                applyFilterButton.disabled = !(brandSelected && regionSelected);
+            }
+
+            brandSelect.addEventListener("change", checkFilters);
+            regionSelect.addEventListener("change", checkFilters);
+
+
+        });
+
+        
+    </script>
+</body>
+</html>

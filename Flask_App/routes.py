@@ -1,9 +1,9 @@
 from flask import Blueprint, render_template, jsonify, request
 from DB.db_connect import run_query, get_geo_data
 from DB.model.regionmodel_code import predict_sales
-from DB.EDA_Geographical import (get_daily_sales_by_month_for_territory)
-
-routes = Blueprint('routes', __name__)
+from DB.model.brandmodel_code import generate_sales_forecast
+from DB.EDA_Geographical import get_daily_sales_by_month_for_territory
+import pandas as pd
 
 # DIVISION
 from DB.FRONTEND_DIVISION_EDA import (
@@ -24,20 +24,27 @@ from DB.eda_sku import (
     get_top_brand_packsize_combos, get_top_flavours_by_division
 )
 
+routes = Blueprint('routes', __name__)
+
 # === FRONTEND ===
 @routes.route('/')
 def index():
     return render_template('indexmodel.html')  # main page
 
-# === NEW FORECAST DASHBOARD ===
 @routes.route('/regionmodel')
 def model_page():
-    return render_template('regionmodel.html')  # This is the page you want to open
+    return render_template('regionmodel.html')  # Region model page
 
 @routes.route('/brandmodel')
 def model2_page():
-    return render_template('regionmodel.html')  # This is the page you want to open
+    return render_template('brandmodel.html')  # Brand model page
 
+@routes.route('/api/go-to-predictions')
+def go_to_predictions():
+    return render_template('/brandfurther.html')
+
+
+# === EXISTING API ===
 @routes.route('/api/predict-forecast', methods=['POST'])
 def predict_forecast():
     data = request.get_json()
@@ -45,6 +52,126 @@ def predict_forecast():
     result = predict_sales(division)
     return jsonify(result)
 
+@routes.route('/api/region-top-brands', methods=['GET'])
+def region_top_brands():
+    region = request.args.get('region', '')
+    if not region:
+        return jsonify({"error": "Region parameter is required"}), 400
+    try:
+        result = generate_sales_forecast(var_region=region)
+        return jsonify({
+            "status": "success",
+            "data": {
+                "summary": result["summary"],
+                "actual_vs_predicted": result["actual_vs_predicted"],
+                "brands": result["brands"],
+                "regions": result["regions"]
+            }
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# === NEW API ENDPOINTS ===
+@routes.route('/api/forecast', methods=['GET'])
+def get_forecast():
+    try:
+        region = request.args.get('region')
+        forecast_data = generate_sales_forecast(var_region=region)
+        response = {
+            'status': 'success',
+            'data': {
+                'summary': forecast_data['summary'],
+                'actual_vs_predicted': forecast_data['actual_vs_predicted'],
+                'brands': forecast_data['brands'],
+                'regions': forecast_data['regions']
+            }
+        }
+        return jsonify(response), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@routes.route('/api/summary', methods=['GET'])
+def get_summary():
+    try:
+        region = request.args.get('region')
+        brand = request.args.get('brand')
+        forecast_data = generate_sales_forecast(var_region=region)
+        summary_df = pd.DataFrame(forecast_data['summary'])
+        
+        if brand:
+            summary_df = summary_df[summary_df['BRAND'] == brand]
+        
+        summary_grouped = summary_df.groupby(['DATE', 'TYPE', 'REGION', 'BRAND'])['SALES'].sum().reset_index()
+        summary_grouped['DATE'] = pd.to_datetime(summary_grouped['DATE']).dt.strftime('%Y-%m-%d')
+        
+        response = {
+            'status': 'success',
+            'data': summary_grouped.to_dict(orient='records')
+        }
+        return jsonify(response), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@routes.route('/api/actual-vs-predicted', methods=['GET'])
+def get_actual_vs_predicted():
+    try:
+        region = request.args.get('region')
+        brand = request.args.get('brand')
+        forecast_data = generate_sales_forecast(var_region=region)
+        avp_df = pd.DataFrame(forecast_data['actual_vs_predicted'])
+        
+        if brand:
+            avp_df = avp_df[avp_df['BRAND'] == brand]
+        
+        avp_df['DATE'] = pd.to_datetime(avp_df['DATE']).dt.strftime('%Y-%m-%d')
+        
+        response = {
+            'status': 'success',
+            'data': avp_df.to_dict(orient='records')
+        }
+        return jsonify(response), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@routes.route('/api/brands', methods=['GET'])
+def get_brands():
+    try:
+        region = request.args.get('region')
+        forecast_data = generate_sales_forecast(var_region=region)
+        response = {
+            'status': 'success',
+            'data': forecast_data['brands']
+        }
+        return jsonify(response), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@routes.route('/api/regions', methods=['GET'])
+def get_regions():
+    try:
+        forecast_data = generate_sales_forecast()
+        response = {
+            'status': 'success',
+            'data': forecast_data['regions']
+        }
+        return jsonify(response), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 # === DIVISION ===
 @routes.route('/api/region-sales')
 def api_region_sales():
